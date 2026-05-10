@@ -1,6 +1,7 @@
 package com.apcsequencer;
 
 import com.bitwig.extension.callback.BooleanValueChangedCallback;
+import com.bitwig.extension.callback.DoubleValueChangedCallback;
 import com.bitwig.extension.callback.StringValueChangedCallback;
 import com.bitwig.extension.controller.ControllerExtension;
 import com.bitwig.extension.controller.api.*;
@@ -72,8 +73,8 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
             else         sequencer.stop();
         });
 
-        // addRawValueObserver gives the actual BPM as a double
-        transport.tempo().addRawValueObserver(bpm -> sequencer.setBpm(bpm));
+        // value().addValueObserver is the API v2+ replacement for addRawValueObserver
+        transport.tempo().value().addValueObserver((DoubleValueChangedCallback) bpm -> sequencer.setBpm(bpm));
 
         // ── Input handler ────────────────────────────────────────────────────
         inputHandler = new InputHandler(
@@ -89,9 +90,7 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
         final SettableRangedValue knob8Setting = host.getPreferences().getNumberSetting(
             "CC Number (Knob 8)", "Sequencer", 0, 127, 1, "", 74
         );
-        knob8Setting.addRawValueObserver(
-            cc -> sequencer.setKnob8Cc((int) Math.round(cc))
-        );
+        knob8Setting.addValueObserver(128, cc -> sequencer.setKnob8Cc(cc));
 
         // ── Persistence: restore on project load ─────────────────────────────
         persistenceSetting = host.getDocumentState().getStringSetting(
