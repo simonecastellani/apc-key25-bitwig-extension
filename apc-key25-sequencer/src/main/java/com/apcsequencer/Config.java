@@ -4,8 +4,11 @@ public final class Config {
     private Config() {}
 
     // MIDI port indices
-    public static final int PORT_KEYBOARD = 0;  // Port 0: keyboard in
-    public static final int PORT_PADS     = 1;  // Port 1: pads/buttons/knobs in
+    // Extension definition assigns: In[0]="APC Key 25" (pads/buttons/knobs),
+    //                                In[1]="APC Key 25 MIDI 2" (keyboard)
+    //                               Out[0]="APC Key 25" (LEDs)
+    public static final int PORT_KEYBOARD = 1;  // Port 1: keyboard in
+    public static final int PORT_PADS     = 0;  // Port 0: pads/buttons/knobs in
     public static final int PORT_OUT      = 0;  // Port 0: LEDs out
 
     // Pad note numbers: pads[row][col]

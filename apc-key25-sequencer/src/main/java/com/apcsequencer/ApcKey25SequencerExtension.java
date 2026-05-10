@@ -49,13 +49,17 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
         final MidiIn  pads     = getMidiInPort(Config.PORT_PADS);
         final MidiOut ledOut   = getMidiOutPort(Config.PORT_OUT);
 
-        // ── NoteInputs (one per track; no masks → we inject everything manually) ──
+        // ── NoteInputs (one per track) ───────────────────────────────────────
+        // Block all auto-routing via setKeyTranslationTable(-1 for every note).
+        // This ensures keyboard notes reach tracks ONLY through our manual
+        // sendRawMidiEvent calls in InputHandler, never through auto-pass-through.
+        final Integer[] blockAll = new Integer[128];
+        java.util.Arrays.fill(blockAll, -1);
         final Sequencer.NoteInputPort[] noteInputPorts =
             new Sequencer.NoteInputPort[Config.NUM_TRACKS];
         for (int i = 0; i < Config.NUM_TRACKS; i++) {
-            // createNoteInput with no masks: Bitwig shows it as a virtual MIDI input
-            // but no raw hardware MIDI auto-routes to it.
             final NoteInput ni = keyboard.createNoteInput("APC Seq Track " + (i + 1));
+            ni.setKeyTranslationTable(blockAll);
             noteInputPorts[i]  = ni::sendRawMidiEvent;
         }
 
