@@ -153,6 +153,34 @@ public class Sequencer {
         };
     }
 
+    /**
+     * Multi-track runtime constructor. The caller (Extension) is responsible for
+     * blocking NoteInput passthrough on Port 1 before creating sequencers.
+     *
+     * @param clip      a {@link PinnableCursorClip} from a CursorTrack at the desired position
+     * @param ledOutput LED sink for pad row LEDs (Port 0 note-on)
+     */
+    public Sequencer(PinnableCursorClip clip, LedOutput ledOutput) {
+        this.host       = null;
+        this.noteOutput = null;
+        this.ledOutput  = ledOutput;
+        this.clip       = clip;
+        clip.playingStep().addValueObserver(
+                (IntegerValueChangedCallback) this::setPlayhead, -1);
+        clip.exists().addValueObserver(
+                (BooleanValueChangedCallback) exists -> {
+                    if (exists) syncPatternToClip();
+                });
+        this.clipOutput = new ClipOutput() {
+            public void setStep(int step) {
+                clip.setStep(0, step, 0, FIXED_VELOCITY, GATE_DURATION);
+            }
+            public void clearStep(int step) {
+                clip.clearStep(0, step, 0);
+            }
+        };
+    }
+
     // ── Sync pattern → clip ───────────────────────────────────────────────
 
     /**
@@ -172,7 +200,7 @@ public class Sequencer {
                 clipOutput.clearStep(s);
             }
         }
-        host.println("Pattern synced to clip (" + PATTERN_LENGTH + " steps)");
+        if (host != null) host.println("Pattern synced to clip (" + PATTERN_LENGTH + " steps)");
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
