@@ -1,151 +1,117 @@
 package com.apcsequencer;
 
-import com.bitwig.extension.callback.BooleanValueChangedCallback;
-import com.bitwig.extension.callback.DoubleValueChangedCallback;
-import com.bitwig.extension.callback.StringValueChangedCallback;
 import com.bitwig.extension.controller.ControllerExtension;
-import com.bitwig.extension.controller.api.*;
+import com.bitwig.extension.controller.api.ControllerHost;
+import com.bitwig.extension.controller.api.CursorTrack;
+import com.bitwig.extension.controller.api.MidiIn;
+import com.bitwig.extension.controller.api.MidiOut;
+import com.bitwig.extension.controller.api.NoteInput;
+import com.bitwig.extension.controller.api.PinnableCursorClip;
+
+import java.util.Arrays;
 
 public class ApcKey25SequencerExtension extends ControllerExtension {
 
-    private ControllerHost controllerHost;
+    // APC Key 25 mk1: all input on PORT 1; PORT 0 is LED output only.
+    private static final int PORT_ALL_IN  = 1;
+    private static final int PORT_LED_OUT = 0;
 
-    private TrackState[]  tracks;
-    private InputState    inputState;
-    private ScaleManager  scaleManager;
-    private Sequencer     sequencer;
-    private LedManager    ledManager;
-    private InputHandler  inputHandler;
+    // All pad rows: notes 0x00–0x27 (rows 4–0, bottom to top)
+    private static final int PAD_MIN = 0x00;
+    private static final int PAD_MAX = 0x27;
 
-    // Persistence setting (DocumentState)
-    private SettableStringValue persistenceSetting;
+    // Scene Launch buttons 1–5: channel 0, notes 0x52–0x56
+    private static final int SCENE_LAUNCH_MIN = 0x52;
+    private static final int SCENE_LAUNCH_MAX = 0x56;
 
-    // Out-parameter arrays for deserialization
-    private final int[] scaleIdxHolder  = {0};
-    private final int[] rootNoteHolder  = {0};
-    private final int[] activeTrackHolder = {0};
+    private static final int NUM_TRACKS = 5;
+
+    private final ControllerHost host;
+    private TrackRouter          router;
+
+    // Keep CursorTrack references alive to prevent garbage collection.
+    @SuppressWarnings("FieldCanBeLocal")
+    private CursorTrack[] cursors;
 
     protected ApcKey25SequencerExtension(
-            ApcKey25SequencerExtensionDefinition definition, ControllerHost host) {
+            ApcKey25SequencerExtensionDefinition definition,
+            ControllerHost host) {
         super(definition, host);
-        this.controllerHost = host;
+        this.host = host;
     }
 
     @Override
     public void init() {
-        final ControllerHost host = controllerHost;
+        MidiIn  allIn  = host.getMidiInPort(PORT_ALL_IN);
+        MidiOut ledOut = host.getMidiOutPort(PORT_LED_OUT);
 
-        // ── Tracks ──────────────────────────────────────────────────────────
-        tracks = new TrackState[Config.NUM_TRACKS];
-        for (int i = 0; i < Config.NUM_TRACKS; i++) tracks[i] = new TrackState(i + 1);
+        // Block all hardware notes from passing through to Bitwig instruments (once, shared).
+        NoteInput noteInput = allIn.createNoteInput("APC Key 25 Seq");
+        noteInput.setKeyTranslationTable(blockAllTable());
 
-        // ── State objects ────────────────────────────────────────────────────
-        inputState   = new InputState();
-        scaleManager = new ScaleManager();
-        ledManager   = new LedManager();
+        // Shared pad LED output (all sequencers write to the same port 0).
+        Sequencer.LedOutput padLeds = (note, color) ->
+                ledOut.sendMidi(0x90, note, color);
 
-        // ── MIDI ports ───────────────────────────────────────────────────────
-        final MidiIn  keyboard = getMidiInPort(Config.PORT_KEYBOARD);
-        final MidiIn  pads     = getMidiInPort(Config.PORT_PADS);
-        final MidiOut ledOut   = getMidiOutPort(Config.PORT_OUT);
+        // Scene Launch LED output (notes 0x52–0x56 on port 0).
+        TrackRouter.SceneLedOutput sceneLeds = (row, color) ->
+                ledOut.sendMidi(0x90, SCENE_LAUNCH_MIN + row, color);
 
-        // ── NoteInputs (one per track) ───────────────────────────────────────
-        // Block all auto-routing via setKeyTranslationTable(-1 for every note).
-        // This ensures keyboard notes reach tracks ONLY through our manual
-        // sendRawMidiEvent calls in InputHandler, never through auto-pass-through.
-        final Integer[] blockAll = new Integer[128];
-        java.util.Arrays.fill(blockAll, -1);
-        final Sequencer.NoteInputPort[] noteInputPorts =
-            new Sequencer.NoteInputPort[Config.NUM_TRACKS];
-        for (int i = 0; i < Config.NUM_TRACKS; i++) {
-            final NoteInput ni = keyboard.createNoteInput("APC Seq Track " + (i + 1));
-            ni.setKeyTranslationTable(blockAll);
-            noteInputPorts[i]  = ni::sendRawMidiEvent;
+        // Create 5 independent cursor tracks, navigated to positions 0–4.
+        // shouldSelectHierarchy=false means each cursor ignores the Bitwig UI selection
+        // and only moves via our API calls — giving fixed track mapping.
+        cursors = new CursorTrack[NUM_TRACKS];
+        Sequencer[] sequencers = new Sequencer[NUM_TRACKS];
+        for (int i = 0; i < NUM_TRACKS; i++) {
+            CursorTrack cursor = host.createCursorTrack(
+                    "apc-seq-track-" + i, "APC Seq Track " + (i + 1), 0, 0, false);
+            cursor.selectFirst();
+            for (int j = 0; j < i; j++) {
+                cursor.selectNext();
+            }
+            cursors[i] = cursor;
+            PinnableCursorClip clip = cursor.createLauncherCursorClip(
+                    Sequencer.PATTERN_LENGTH, 1);
+            sequencers[i] = new Sequencer(clip, padLeds);
         }
 
-        // ── Sequencer ────────────────────────────────────────────────────────
-        sequencer = new Sequencer(
-            tracks, noteInputPorts, scaleManager,
-            (cb, delayMs) -> host.scheduleTask(cb, delayMs)
-        );
+        router = new TrackRouter(sequencers, sceneLeds);
+        router.initLeds();
 
-        // ── Transport sync ───────────────────────────────────────────────────
-        final Transport transport = host.createTransport();
-
-        transport.isPlaying().addValueObserver((BooleanValueChangedCallback) playing -> {
-            if (playing) sequencer.start();
-            else         sequencer.stop();
+        // Wire raw MIDI callback last so router is fully initialised before any input.
+        allIn.setMidiCallback((status, data1, data2) -> {
+            host.println(MidiUtils.formatMidiMessage(status, data1, data2));
+            dispatchMidi(status, data1, data2);
         });
 
-        // value().addValueObserver is the API v2+ replacement for addRawValueObserver
-        transport.tempo().value().addValueObserver((DoubleValueChangedCallback) bpm -> sequencer.setBpm(bpm));
+        host.println("APC Key 25 Sequencer init OK — 5 tracks");
+    }
 
-        // ── Input handler ────────────────────────────────────────────────────
-        inputHandler = new InputHandler(
-            tracks, inputState, scaleManager, noteInputPorts,
-            this::save,
-            host::requestFlush
-        );
+    private void dispatchMidi(int status, int data1, int data2) {
+        int channel = status & 0x0F;
+        int msgType = status & 0xF0;
 
-        keyboard.setMidiCallback((s, d1, d2) -> inputHandler.onKeyboardMidi(s, d1, d2));
-        pads    .setMidiCallback((s, d1, d2) -> inputHandler.onPadMidi(s, d1, d2));
+        // Only process note-on (velocity > 0) on channel 0
+        if (msgType != 0x90 || channel != 0 || data2 == 0) return;
 
-        // ── Preferences: configurable CC for knob 8 ─────────────────────────
-        final SettableRangedValue knob8Setting = host.getPreferences().getNumberSetting(
-            "CC Number (Knob 8)", "Sequencer", 0, 127, 1, "", 74
-        );
-        knob8Setting.addValueObserver(128, cc -> sequencer.setKnob8Cc(cc));
+        if (data1 >= SCENE_LAUNCH_MIN && data1 <= SCENE_LAUNCH_MAX) {
+            router.sceneLaunchPressed(data1 - SCENE_LAUNCH_MIN);
+        } else if (data1 >= PAD_MIN && data1 <= PAD_MAX) {
+            router.padTapped(data1);
+        }
+    }
 
-        // ── Persistence: restore on project load ─────────────────────────────
-        persistenceSetting = host.getDocumentState().getStringSetting(
-            "Sequencer State", "Sequencer", 65535, ""
-        );
-        persistenceSetting.addValueObserver(new StringValueChangedCallback() {
-            @Override public void valueChanged(Object newVal) {
-                final String json = (String) newVal;
-                if (json != null && !json.isEmpty()) {
-                    PersistenceManager.deserialize(
-                        json, tracks, scaleIdxHolder, rootNoteHolder, activeTrackHolder
-                    );
-                    scaleManager.setScaleIndex(scaleIdxHolder[0]);
-                    scaleManager.setRootNote(rootNoteHolder[0]);
-                    inputState.activeTrack = activeTrackHolder[0];
-                    controllerHost.requestFlush();
-                }
-            }
-        });
-
-        host.showPopupNotification("APC Key 25 Sequencer initialized");
+    private static Integer[] blockAllTable() {
+        Integer[] table = new Integer[128];
+        Arrays.fill(table, -1);
+        return table;
     }
 
     @Override
-    public void flush() {
-        final MidiOut ledOut = getMidiOutPort(Config.PORT_OUT);
-        final LedManager.MidiSender sender =
-            (status, d1, d2) -> ledOut.sendMidi(status, d1, d2);
-
-        if (inputState.stopAllClipsHeld) {
-            ledManager.updateScaleView(
-                scaleManager.getScaleIndex(), inputState.activeTrack
-            );
-        } else {
-            ledManager.updateSequencerView(tracks);
-        }
-        ledManager.updateRecordLed(tracks[inputState.activeTrack].melodicMode);
-        ledManager.flush(sender);
-    }
+    public void flush() {}
 
     @Override
     public void exit() {
-        sequencer.stop();
-    }
-
-    private void save() {
-        persistenceSetting.set(PersistenceManager.serialize(
-            tracks,
-            scaleManager.getScaleIndex(),
-            scaleManager.getRootNote(),
-            inputState.activeTrack
-        ));
+        host.println("APC Key 25 Sequencer exit");
     }
 }
