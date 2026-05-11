@@ -1,143 +1,271 @@
 package com.apcsequencer;
 
-import java.util.Random;
+import com.bitwig.extension.callback.BooleanValueChangedCallback;
+import com.bitwig.extension.callback.IntegerValueChangedCallback;
+import com.bitwig.extension.controller.api.ControllerHost;
+import com.bitwig.extension.controller.api.CursorTrack;
+import com.bitwig.extension.controller.api.MidiIn;
+import com.bitwig.extension.controller.api.MidiOut;
+import com.bitwig.extension.controller.api.NoteInput;
+import com.bitwig.extension.controller.api.PinnableCursorClip;
+
+import java.util.Arrays;
 
 public class Sequencer {
 
-    /** Abstracts Bitwig NoteInput for testability. */
-    public interface NoteInputPort {
+    public static final int STEPS_PER_BEAT  = 2;    // 8th-note steps
+    public static final int PATTERN_LENGTH  = 8;
+    private static final int FIXED_NOTE     = 60;   // Middle C
+    private static final int FIXED_VELOCITY = 100;
+
+    /**
+     * Note gate as a fraction of step duration (used by clip scheduling).
+     * e.g. 0.5-beat step × 0.85 = 0.425 beats gate.
+     */
+    private static final double GATE_RATIO      = 0.85;
+    private static final double STEP_SIZE_BEATS = 1.0 / STEPS_PER_BEAT;  // 0.5
+    static final double         GATE_DURATION   = STEP_SIZE_BEATS * GATE_RATIO; // 0.425
+
+    // LED color velocities (APC Key 25 mk1)
+    public static final int LED_OFF    = 0;
+    public static final int LED_GREEN  = 1;
+    public static final int LED_RED    = 3;
+    public static final int LED_ORANGE = 5;
+
+    // ── Testable interfaces ───────────────────────────────────────────────
+
+    public interface NoteOutput {
         void sendRawMidiEvent(int status, int data1, int data2);
     }
 
-    /** Abstracts host.scheduleTask for testability. */
-    public interface TaskScheduler {
-        void schedule(Runnable callback, long delayMs);
+    public interface LedOutput {
+        void setLed(int noteNumber, int color);
     }
 
-    private final TrackState[]    tracks;
-    private final NoteInputPort[] noteInputs;
-    private final ScaleManager    scaleManager;
-    private final TaskScheduler   scheduler;
-    private final Random          random = new Random();
-
-    private volatile boolean running  = false;
-    private          double  stepMs   = 125.0; // 120 BPM default
-    private          int     knob8Cc  = 74;
-
-    public Sequencer(TrackState[] tracks, NoteInputPort[] noteInputs,
-                     ScaleManager scaleManager, TaskScheduler scheduler) {
-        this.tracks       = tracks;
-        this.noteInputs   = noteInputs;
-        this.scaleManager = scaleManager;
-        this.scheduler    = scheduler;
+    public interface ClipOutput {
+        /** Write an enabled step into the clip (uses fixed velocity + gate duration). */
+        void setStep(int step);
+        /** Remove a step from the clip. */
+        void clearStep(int step);
     }
 
-    public void setBpm(double bpm) {
-        stepMs = (60000.0 / bpm) / 4.0;
+    private static final ClipOutput NOOP_CLIP_OUTPUT = new ClipOutput() {
+        public void setStep(int step)   {}
+        public void clearStep(int step) {}
+    };
+
+    // ── Pure address helpers ──────────────────────────────────────────────
+
+    /** Bottom pad row (row 4): notes 0x00–0x07, one-to-one with step index. */
+    public static int bottomRowNote(int step) {
+        return step;
     }
 
-    public void setKnob8Cc(int cc) {
-        this.knob8Cc = cc;
+    /** Map a beat position to a pattern step index [0, patternLength). */
+    public static int calculateStep(double beatPosition, int stepsPerBeat, int patternLength) {
+        if (beatPosition < 0) return 0;
+        return (int)(beatPosition * stepsPerBeat) % patternLength;
     }
 
-    public boolean isRunning() { return running; }
-
-    public void start() {
-        resetAllStepCounters();
-        running = true;
-        scheduleTick();
+    /**
+     * Duration of one step in milliseconds at the given BPM and steps-per-beat.
+     * e.g. 120 BPM, 2 steps/beat → 250 ms/step.
+     */
+    public static double calculateStepDurationMs(double bpm, int stepsPerBeat) {
+        return 60_000.0 / bpm / stepsPerBeat;
     }
 
-    public void stop() {
-        running = false;
-        sendAllNotesOff();
+    // ── Instance state ────────────────────────────────────────────────────
+
+    private final ControllerHost     host;       // null in tests
+    private final NoteOutput         noteOutput; // null in runtime (clips handle notes)
+    private final LedOutput          ledOutput;
+    private final ClipOutput         clipOutput;
+    private       PinnableCursorClip clip;       // null in tests; set in runtime constructor
+
+    private int currentStep = -1;
+
+    /** Step enabled/disabled state. All off by default. */
+    private final boolean[] enabled = new boolean[PATTERN_LENGTH];
+
+    // ── Test constructors ─────────────────────────────────────────────────
+
+    /** Backward-compatible test constructor — uses no-op ClipOutput. */
+    Sequencer(NoteOutput noteOutput, LedOutput ledOutput) {
+        this(noteOutput, ledOutput, NOOP_CLIP_OUTPUT);
     }
 
-    public void resetAllStepCounters() {
-        for (TrackState t : tracks) t.currentStep = 0;
+    /** Full test constructor — inject all outputs. */
+    Sequencer(NoteOutput noteOutput, LedOutput ledOutput, ClipOutput clipOutput) {
+        this.host       = null;
+        this.noteOutput = noteOutput;
+        this.ledOutput  = ledOutput;
+        this.clipOutput = clipOutput;
     }
 
-    // Package-private for testing
-    void tick() {
-        if (!running) return;
-        for (int i = 0; i < Config.NUM_TRACKS; i++) {
-            TrackState t = tracks[i];
-            int step = t.currentStep;
-            if (!t.muted && t.steps[step]) {
-                fireStep(i, step);
+    // ── Runtime constructor ───────────────────────────────────────────────
+
+    public Sequencer(ControllerHost host) {
+        this.host = host;
+
+        // Block hardware notes from passing through to Bitwig instruments
+        MidiIn midiIn = host.getMidiInPort(1);
+        NoteInput noteInput = midiIn.createNoteInput("Track 1 — APC Seq");
+        Integer[] blockAll = new Integer[128];
+        Arrays.fill(blockAll, -1);
+        noteInput.setKeyTranslationTable(blockAll);
+        // Clips handle note scheduling; no direct MIDI note output needed
+        this.noteOutput = null;
+
+        // LED output: MidiOut on port 0
+        MidiOut midiOut = host.getMidiOutPort(0);
+        this.ledOutput = (note, color) -> midiOut.sendMidi(0x90, note, color);
+
+        // ── Plan C: clip-based sequencer ─────────────────────────────────
+        // Follow the user's selected track via a CursorTrack; create an 8-step,
+        // 1-key launcher clip.  Bitwig's audio engine handles all note timing at
+        // sample accuracy — no scheduleTask or interpolation needed.
+
+        CursorTrack cursorTrack = host.createCursorTrack(1, 0);
+        this.clip = cursorTrack.createLauncherCursorClip(PATTERN_LENGTH, 1);
+
+        // playingStep() fires with the current step index [0, PATTERN_LENGTH-1]
+        // while the clip is running, or -1 when stopped/not playing.
+        // This drives the LED playhead and replaces all Plan B timing code.
+        clip.playingStep().addValueObserver(
+                (IntegerValueChangedCallback) this::setPlayhead, -1);
+
+        // When a clip appears on the cursor track (user creates or selects one),
+        // configure it and push the current enabled[] state into the clip grid.
+        clip.exists().addValueObserver(
+                (BooleanValueChangedCallback) exists -> {
+                    if (exists) syncPatternToClip();
+                });
+
+        // Clip output: delegates to clip.setStep / clip.clearStep
+        this.clipOutput = new ClipOutput() {
+            public void setStep(int step) {
+                clip.setStep(0, step, 0, FIXED_VELOCITY, GATE_DURATION);
             }
-            t.currentStep = (t.currentStep + 1) % t.patternLength;
-        }
-        scheduleTick();
-    }
-
-    private void scheduleTick() {
-        scheduler.schedule(this::tick, Math.round(stepMs));
-    }
-
-    private void fireStep(int trackIdx, int step) {
-        TrackState t = tracks[trackIdx];
-        if (random.nextDouble() > t.probabilities[step]) return;
-
-        int note     = resolveNote(trackIdx, step);
-        int velocity = t.velocities[step];
-        int ratchet  = t.ratchets[step];
-        long nudgeMs  = (long)(t.nudges[step] * stepMs / 6.0);
-        long gateMs   = (long)(t.gateLengths[step] * stepMs);
-
-        if (ratchet <= 1) {
-            scheduleNote(trackIdx, note, velocity, nudgeMs, gateMs);
-        } else {
-            long rStep = Math.round(stepMs / ratchet);
-            for (int r = 0; r < ratchet; r++) {
-                long delay = nudgeMs + r * rStep;
-                long gate  = Math.max(1, Math.min(gateMs, rStep - 5));
-                scheduleNote(trackIdx, note, velocity, delay, gate);
+            public void clearStep(int step) {
+                clip.clearStep(0, step, 0);
             }
-        }
-
-        // Chord interval (melodic mode only)
-        if (t.melodicMode && t.chordIntervals[step] > 0) {
-            int chord = ScaleManager.applyChordInterval(note, t.chordIntervals[step]);
-            if (chord >= 0 && chord <= 127) {
-                scheduleNote(trackIdx, chord, velocity, nudgeMs, gateMs);
-            }
-        }
-
-        // MIDI CC (knob 8 per step)
-        int ccStatus = Config.CC | (t.midiChannel - 1);
-        noteInputs[trackIdx].sendRawMidiEvent(ccStatus, knob8Cc, t.ccValues[step]);
-    }
-
-    private int resolveNote(int trackIdx, int step) {
-        TrackState t = tracks[trackIdx];
-        int n = t.notes[step];
-        if (n == Config.NOTE_SENTINEL) return t.baseNote;
-        return n;
-    }
-
-    private void scheduleNote(int trackIdx, int note, int velocity,
-                              long delayMs, long gateMs) {
-        int onStatus  = Config.NOTE_ON  | (tracks[trackIdx].midiChannel - 1);
-        int offStatus = Config.NOTE_OFF | (tracks[trackIdx].midiChannel - 1);
-        Runnable noteOn = () -> {
-            noteInputs[trackIdx].sendRawMidiEvent(onStatus, note, velocity);
-            scheduler.schedule(
-                () -> noteInputs[trackIdx].sendRawMidiEvent(offStatus, note, 0),
-                Math.max(1, gateMs)
-            );
         };
-        if (delayMs <= 0) {
-            noteOn.run(); // fire immediately when no nudge delay
+    }
+
+    // ── Sync pattern → clip ───────────────────────────────────────────────
+
+    /**
+     * Configure the cursor clip and write the current {@code enabled[]} state
+     * into the Bitwig clip grid.  Called when a clip first appears on the
+     * cursor track ({@code clip.exists()} transitions to {@code true}).
+     */
+    private void syncPatternToClip() {
+        clip.setStepSize(STEP_SIZE_BEATS);
+        clip.scrollToKey(FIXED_NOTE);
+        clip.isLoopEnabled().set(true);
+        clip.getLoopLength().set(STEP_SIZE_BEATS * PATTERN_LENGTH); // 4.0 beats
+        for (int s = 0; s < PATTERN_LENGTH; s++) {
+            if (enabled[s]) {
+                clipOutput.setStep(s);
+            } else {
+                clipOutput.clearStep(s);
+            }
+        }
+        host.println("Pattern synced to clip (" + PATTERN_LENGTH + " steps)");
+    }
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────
+
+    /** Called by the extension after construction. Currently a no-op; setup happens in the constructor. */
+    public void start() {}
+
+    // ── Pad input ─────────────────────────────────────────────────────────
+
+    public void padTapped(int noteNumber) {
+        if (noteNumber < 0x00 || noteNumber > 0x07) return;
+        int step = noteNumber;
+
+        enabled[step] = !enabled[step];
+
+        if (enabled[step]) {
+            clipOutput.setStep(step);
         } else {
-            scheduler.schedule(noteOn, delayMs);
+            clipOutput.clearStep(step);
+        }
+
+        if (step != currentStep) {
+            ledOutput.setLed(noteNumber, enabled[step] ? LED_GREEN : LED_OFF);
         }
     }
 
-    void sendAllNotesOff() {
-        for (int i = 0; i < Config.NUM_TRACKS; i++) {
-            int status = Config.CC | (tracks[i].midiChannel - 1);
-            noteInputs[i].sendRawMidiEvent(status, Config.CC_ALL_NOTES_OFF, 0);
+    // ── Tick state machine (package-private for tests) ────────────────────
+    //
+    // Used directly only in tests. Runtime uses clip playingStep observer.
+    // Kept beat-position-driven for test readability.
+
+    void tick(boolean isPlaying, double beatPos) {
+        if (isPlaying) {
+            int newStep = calculateStep(beatPos, STEPS_PER_BEAT, PATTERN_LENGTH);
+            if (newStep != currentStep) {
+                if (currentStep >= 0 && noteOutput != null && enabled[currentStep]) {
+                    noteOutput.sendRawMidiEvent(0x80, FIXED_NOTE, 0);
+                }
+                setPlayhead(newStep);
+                if (noteOutput != null && enabled[currentStep]) {
+                    noteOutput.sendRawMidiEvent(0x90, FIXED_NOTE, FIXED_VELOCITY);
+                }
+            }
+        } else {
+            stopPlayback();
+        }
+    }
+
+    // ── Stop ──────────────────────────────────────────────────────────────
+
+    private void stopPlayback() {
+        if (currentStep >= 0) {
+            if (noteOutput != null && enabled[currentStep]) {
+                noteOutput.sendRawMidiEvent(0x80, FIXED_NOTE, 0);
+            }
+            setPlayhead(-1);
+        }
+    }
+
+    // ── Playhead LED helper ───────────────────────────────────────────────
+
+    /**
+     * Advance the playhead to {@code newStep}, updating LEDs:
+     * <ul>
+     *   <li>Restores the previous step's LED (green if enabled, off if disabled).</li>
+     *   <li>Sets the new step's LED to red (playhead). Pass -1 to only restore the old step.</li>
+     * </ul>
+     * Also called from the {@code clip.playingStep()} observer at runtime.
+     */
+    void setPlayhead(int newStep) {
+        // Bitwig may fire playingStep() with PATTERN_LENGTH as a "just-past-end"
+        // sentinel on the loop boundary.  Treat any out-of-range value as stopped.
+        if (newStep >= PATTERN_LENGTH) newStep = -1;
+
+        if (currentStep >= 0) {
+            ledOutput.setLed(bottomRowNote(currentStep),
+                    enabled[currentStep] ? LED_GREEN : LED_OFF);
+        }
+        currentStep = newStep;
+        if (newStep >= 0) {
+            ledOutput.setLed(bottomRowNote(newStep), LED_RED);
+        }
+    }
+
+    /**
+     * Re-emit the current LED state for all 8 pad steps without changing sequencer
+     * state. Called by {@link TrackRouter} when the user switches to this track.
+     */
+    public void refreshLeds() {
+        for (int s = 0; s < PATTERN_LENGTH; s++) {
+            int color = (s == currentStep) ? LED_RED
+                      : (enabled[s]        ? LED_GREEN : LED_OFF);
+            ledOutput.setLed(bottomRowNote(s), color);
         }
     }
 }
