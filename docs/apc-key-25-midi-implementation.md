@@ -193,58 +193,32 @@ LED Blink = 0x
 9X 0B XX
 9X 0C XX
 9X 0D XX
-
-### 9X 0E XX
-
-### 9X 0F XX
-
-### 9X 10 XX
-
-### 9X 11 XX
-
-### 9X 12 XX
-
-### 9X 13 XX
-
-### 9X 14 XX
-
-### 9X 15 XX
-
-### 9X 16 XX
-
-### 9X 17 XX
-
-### 9X 18 XX
-
-### 9X 19 XX
-
-### 9X 1A XX
-
-### 9X 1B XX
-
-### 9X 1C XX
-
-### 9X 1D XX
-
-### 9X 1E XX
-
-### 9X 1F XX
-
-### 9X 20 XX
-
-### 9X 21 XX
-
-### 9X 22 XX
-
-### 9X 23 XX
-
-### 9X 24 XX
-
-### 9X 25 XX
-
-### 9X 26 XX
-
-### 9X 27 XX
+9X 0E XX
+9X 0F XX
+9X 10 XX
+9X 11 XX
+9X 12 XX
+9X 13 XX
+9X 14 XX
+9X 15 XX
+9X 16 XX
+9X 17 XX
+9X 18 XX
+9X 19 XX
+9X 1A XX
+9X 1B XX
+9X 1C XX
+9X 1D XX
+9X 1E XX
+9X 1F XX
+9X 20 XX
+9X 21 XX
+9X 22 XX
+9X 23 XX
+9X 24 XX
+9X 25 XX
+9X 26 XX
+9X 27 XX
 
 **Single LED UI Buttons –** Button values and MIDI Ch are constant, LED behavior is variable.
 
@@ -256,20 +230,13 @@ LED Blink = 0x
 90 45 XX
 90 46 XX
 90 47 XX
-
-### 90 52 XX
-
-### 90 53 XX
-
-### 90 54 XX
-
-### 90 55 XX
-
-### 90 56 XX
-
-### 90 51 XX
-
-### 90 5B XX
+90 52 XX
+90 53 XX
+90 54 XX
+90 55 XX
+90 56 XX
+90 51 XX
+90 5B XX
 
 
 **RGB LED Color Lighting**
