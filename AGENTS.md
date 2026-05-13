@@ -9,16 +9,47 @@ A **Bitwig Studio 6 Java Extension** that turns the Akai APC Key 25 mk1 into a 5
 - **Java 25**, Maven 3.8+
 - **Bitwig API 25**
 
-## High-level workflow
+## Build & Install
 
-1. Classify the task: bug / feature / docs / triage / release.
-2. Prepare context: grill-with-docs, reproduction steps, failing commands, affected files, constraints, and desired deliverable.
-3. Select the skill (see mapping below).
-4. Invoke the skill with a structured prompt (template below).
-5. Review the agent output, run tests locally, iterate if needed.
-6. If changes are correct and user approved, use the commit-work skill.
+```bash
+# Set up environment (paths below are for the local Java/Maven installs)
+export JAVA_HOME=/tmp/opencode/jdk-25
+export M2_HOME=/tmp/opencode/apache-maven-3.8.8
+export PATH=$JAVA_HOME/bin:$M2_HOME/bin:$PATH
 
-## Skill → Scenario mapping
+cd apc-key25-sequencer
+mvn package
+```
+
+`mvn package` compiles, runs all tests, creates a fat JAR (Gson bundled, Bitwig API excluded), and copies `ApcKey25Sequencer.bwextension` to Bitwig's extensions folder:
+
+```
+Windows: %USERPROFILE%\Documents\Bitwig Studio\Extensions
+macOS: ~/Documents/Bitwig Studio/Extensions
+Linux: ~/Bitwig Studio/Extensions
+```
+
+## Documentation
+
+All the documentations should be stored in the `docs` folder.
+
+| File | Scope | When to use |
+|------|-------|-------------|
+| `docs/apc-key-25-midi-implementation.md` | APC Key MK2 MIDI Implementation | Read as a reference to understand how to implement the MIDI I/O protocol between the APC Key 25 and Bitwig. **NOTE** This document if for MK2 but the project uses MK1 device, some differences may not be documented. |
+| `docs/apc-key-25-midi-sniff.md` | APC Key MK1 MIDI code dump | Read as a reference of exact MIDI output code for each UI element |
+| `docs/bitwig-api-v25.txt` | A TXT version of the Bitwig's API v25 Specification from Maven repository | Read as a reference to implement the Bitwig Extension's code |
+
+**NOTE** If a device's MIDI specification is not clear print debug messages to the `Controller Script Console` to check for the correct information and ask for feedbacks before continue with the actual implementation.
+
+**NOTE** Keep AGENTS.md's documentation index updated as new document are created.
+
+## MCP
+
+- use `cavemem` MCP to manage cross-agent persistent memory
+
+## Agent skills
+
+### Skill → Scenario mapping
 
 - caveman: produce extremely concise responses or summaries.
 - commit-work: create high-quality commits, stage and commit changes (use only when explicitly allowed).
@@ -32,12 +63,38 @@ A **Bitwig Studio 6 Java Extension** that turns the Akai APC Key 25 mk1 into a 5
 - triage: triage a list of incoming issues/bug reports.
 - zoom-out: provide a high-level summary of a code area or system.
 
-## Example flows
-- New feature: grill-with-docs → to-prd → to-issues → tdd → adversarial review → commit-work.
-- Small bug fix: diagnose → tdd → adversarial review → commit-work.
-- Big bug fix: diagnose → to-issues → tdd → adversarial review → commit-work.
+### High-level workflow
 
-## Prompt template
+1. Prepare context: grill-with-docs, reproduction steps, failing commands, affected files, constraints, and desired deliverable.
+2. Classify the task: bug / feature / docs / triage / release.
+3. Select the skill (see mapping below).
+4. Invoke the skill with a structured prompt (template below).
+5. Review the agent output, run tests locally, iterate if needed.
+6. If changes are correct and user approved, use the commit-work skill.
+
+### Example flows
+- New feature: 
+    1. grill-with-docs 
+    2. to-prd 
+    3. to-issues 
+    4. tdd loop
+    5. adversarial review 
+    6. commit-work
+
+- Small bug fix: 
+    1. diagnose 
+    2. tdd loop
+    3. adversarial review 
+    4. commit-work
+
+- Big bug fix:
+    1. diagnose 
+    2. to-issues 
+    3. tdd loop
+    4. adversarial review 
+    5. commit-work
+
+### Prompt template
 - Goal: <one short sentence>
 - Background: <why / expected behavior>
 - Reproduce: <commands to reproduce + failing output> # if in bugs workflow
@@ -48,17 +105,14 @@ A **Bitwig Studio 6 Java Extension** that turns the Akai APC Key 25 mk1 into a 5
 - Commit permission: <yes/no> (default no)
 - Branch name (if commit permission yes): <suggested branch>
 
-## Documentation
+### Issue tracker
 
-All the documentations should be stored in the `docs` folder.
+Issues are tracked in GitHub Issues for this repository and should be managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
-| File | Scope | When to use |
-|------|-------|-------------|
-| `docs/apc-key-25-midi-implementation.md` | APC Key MK2 MIDI Implementation | Read as a reference to understand how to implement the MIDI I/O protocol between the APC Key 25 and Bitwig. **NOTE** This document if for MK2 but the project uses MK1 device, some differences may not be documented. |
-| `docs/apc-key-25-midi-sniff.md` | APC Key MK1 MIDI code dump | Read as a reference of exact MIDI output code for each UI element |
-| `docs/bitwig-api.md` | A HTML-to-Markdown convertion of the Bitwig's API v19 Specification | Read as a reference to implement the Bitwig Extension's code |
-| `docs/bitwig-api.json` | A HTML-to-JSON Bitwig's API v19 Specification | Read as a reference to implement the Bitwig Extension's code |
+### Triage labels
 
-**NOTE** If a device's MIDI specification is not clear print debug messages to the `Controller Script Console` to check for the correct information and ask for feedbacks before continue with the actual implementation.
+This repo uses the canonical triage labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
 
-**NOTE** Keep AGENTS.md's documentation index updated as new document are created.
+### Domain docs
+
+This repo is configured as single-context (root `CONTEXT.md` and `docs/adr/`; proceed silently if missing). See `docs/agents/domain.md`.
