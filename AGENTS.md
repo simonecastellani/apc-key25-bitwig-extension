@@ -52,70 +52,14 @@ All the documentations should be stored in the `docs` folder.
 
 ## Agent skills
 
-### Skill → Scenario mapping
-
-- caveman: produce extremely concise responses or summaries.
-- commit-work: create high-quality commits, stage and commit changes (use only when explicitly allowed).
-- diagnose: reproduce bugs, propose fixes, add instrumentation guidance.
-- grill-with-docs: question or stress-test a plan; use grill-with-docs when you want checks against existing docs/ADRs.
-- handoff: produce a concise handoff for a human or another agent.
-- improve-codebase-architecture: propose larger architectural improvements.
-- tdd: write failing tests first and implement code to pass them.
-- to-issues: turn a problem/idea into a well-formed GitHub issue.
-- to-prd: produce a product/feature spec for larger work.
-- triage: triage a list of incoming issues/bug reports.
-- zoom-out: provide a high-level summary of a code area or system.
-
-### High-level workflow
-
-1. Prepare context: grill-with-docs, reproduction steps, failing commands, affected files, constraints, and desired deliverable.
-2. Classify the task: bug / feature / docs / triage / release.
-3. Select the skill (see mapping below).
-4. Invoke the skill with a structured prompt (template below).
-5. Review the agent output, run tests locally, iterate if needed.
-6. If changes are correct and user approved, use the commit-work skill.
-
-### Example flows
-- New feature: 
-    1. grill-with-docs 
-    2. to-prd 
-    3. to-issues 
-    4. tdd loop 
-    5. adversarial review 
-    6. commit-work
-
-- Small bug fix: 
-    1. diagnose 
-    2. tdd loop
-    3. adversarial review 
-    4. commit-work
-
-- Big bug fix:
-    1. diagnose 
-    2. to-issues 
-    3. tdd loop
-    4. adversarial review 
-    5. commit-work
-
-### Prompt template
-- Goal: <one short sentence>
-- Background: <why / expected behavior>
-- Reproduce: <commands to reproduce + failing output> # if in bugs workflow
-- Files: <list of files or directories to inspect>
-- Tests: <command(s) to run>
-- Constraints: <max LOC, do-not-touch paths, performance, etc.>
-- Deliverable: <diff | commit | tests | issue body | PR body>
-- Commit permission: <yes/no> (default no)
-- Branch name (if commit permission yes): <suggested branch>
-
 ### Issue tracker
 
-Issues are tracked in GitHub Issues for this repository and should be managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues are tracked on GitHub Issues for this repository. See `docs/agents/issue-tracker.md` for conventions and `gh` CLI examples.
 
 ### Triage labels
 
-This repo uses the canonical triage labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+This repository uses the canonical triage labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
-This repo is configured as single-context (root `CONTEXT.md` and `docs/adr/`; proceed silently if missing). See `docs/agents/domain.md`.
+This repository is configured as single-context: `CONTEXT.md` at the repo root and ADRs under `docs/adr/`. See `docs/agents/domain.md`.
