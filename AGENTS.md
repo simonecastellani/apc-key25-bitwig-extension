@@ -6,14 +6,14 @@ A **Bitwig Studio 6 Java Extension** that turns the Akai APC Key 25 mk1 into a 5
 
 ## Technology Stack
 
-- **Java 25**, Maven 3.8+
+- **Java 17** (JDK 17.0.2 available at `/tmp/opencode/jdk-17.0.2`), Maven 3.8+
 - **Bitwig API 25**
 
 ## Build & Install
 
 ```bash
 # Set up environment (paths below are for the local Java/Maven installs)
-export JAVA_HOME=/tmp/opencode/jdk-25
+export JAVA_HOME=/tmp/opencode/jdk-17.0.2
 export M2_HOME=/tmp/opencode/apache-maven-3.8.8
 export PATH=$JAVA_HOME/bin:$M2_HOME/bin:$PATH
 
@@ -24,7 +24,7 @@ mvn package
 `mvn package` compiles, runs all tests, creates a fat JAR (Gson bundled, Bitwig API excluded), and copies `ApcKey25Sequencer.bwextension` to Bitwig's extensions folder:
 
 ```
-Windows: %USERPROFILE%\Documents\Bitwig Studio\Extensions
+Windows/WSL: %USERPROFILE%\Documents\Bitwig Studio\Extensions
 macOS: ~/Documents/Bitwig Studio/Extensions
 Linux: ~/Bitwig Studio/Extensions
 ```
@@ -37,11 +37,14 @@ All the documentations should be stored in the `docs` folder.
 |------|-------|-------------|
 | `docs/apc-key-25-midi-implementation.md` | APC Key MK2 MIDI Implementation | Read as a reference to understand how to implement the MIDI I/O protocol between the APC Key 25 and Bitwig. **NOTE** This document if for MK2 but the project uses MK1 device, some differences may not be documented. |
 | `docs/apc-key-25-midi-sniff.md` | APC Key MK1 MIDI code dump | Read as a reference of exact MIDI output code for each UI element |
+| `docs/bitwig-docs.md` | A HTML-to-Markdown convertion of the Bitwig's API Specification | Read as a reference to implement the Bitwig Extension's code |
 | `docs/bitwig-api-v25.txt` | A TXT version of the Bitwig's API v25 Specification from Maven repository | Read as a reference to implement the Bitwig Extension's code |
+| `docs/adr/0001-notestep-clip-writing-over-internal-clock.md` | Architecture Decision Record | Rationale for using the NoteStep clip-writing API instead of an internal MIDI clock |
 
-**NOTE** If a device's MIDI specification is not clear print debug messages to the `Controller Script Console` to check for the correct information and ask for feedbacks before continue with the actual implementation.
-
-**NOTE** Keep AGENTS.md's documentation index updated as new document are created.
+**NOTES**
+- If a device's MIDI specification is not clear print debug messages to the `Controller Script Console` to check for the correct information and ask for feedbacks before continue with the actual implementation.
+- Keep AGENTS.md's documentation index updated as new document are created.
+- Always write documents in English
 
 ## MCP
 
@@ -77,7 +80,7 @@ All the documentations should be stored in the `docs` folder.
     1. grill-with-docs 
     2. to-prd 
     3. to-issues 
-    4. tdd loop
+    4. tdd loop 
     5. adversarial review 
     6. commit-work
 
