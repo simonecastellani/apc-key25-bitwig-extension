@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.apcsequencer</groupId>
+  <artifactId>apc-key25-sequencer</artifactId>
+  <version>1.0-SNAPSHOT</version>
+  <packaging>jar</packaging>
+
+  <name>APC Key 25 Polyrhythmic Sequencer</name>
+  <description>Bitwig Studio 6 extension – 5-track polyrhythmic/polymetric step sequencer for Akai APC Key 25 MK1</description>
+
+  <properties>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <bitwig.api.version>25</bitwig.api.version>
+    <gson.version>2.10.1</gson.version>
+    <!-- Extension install destination (Linux default; override via -Dbitwig.extensions.dir=...) -->
+    <bitwig.extensions.dir>${user.home}/Bitwig Studio/Extensions</bitwig.extensions.dir>
+  </properties>
+
+  <!-- Official Bitwig Maven repository -->
+  <repositories>
+    <repository>
+      <id>bitwig</id>
+      <url>https://maven.bitwig.com</url>
+    </repository>
+  </repositories>
+
+  <dependencies>
+    <!-- Bitwig Extension API – provided at runtime by Bitwig Studio -->
+    <dependency>
+      <groupId>com.bitwig</groupId>
+      <artifactId>extension-api</artifactId>
+      <version>${bitwig.api.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- Gson – bundled into fat JAR -->
+    <dependency>
+      <groupId>com.google.code.gson</groupId>
+      <artifactId>gson</artifactId>
+      <version>${gson.version}</version>
+    </dependency>
+
+    <!-- Test -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.10.2</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+
+      <!-- 1. Compile -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <source>${maven.compiler.source}</source>
+          <target>${maven.compiler.target}</target>
+        </configuration>
+      </plugin>
+
+      <!-- 2. Test runner -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
+      </plugin>
+
+      <!-- 3. Fat JAR (Gson bundled; Bitwig API excluded via provided scope) -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-assembly-plugin</artifactId>
+        <version>3.7.1</version>
+        <executions>
+          <execution>
+            <id>fat-jar</id>
+            <phase>package</phase>
+            <goals>
+              <goal>single</goal>
+            </goals>
+            <configuration>
+              <descriptorRefs>
+                <descriptorRef>jar-with-dependencies</descriptorRef>
+              </descriptorRefs>
+              <finalName>ApcKey25Sequencer</finalName>
+              <appendAssemblyId>false</appendAssemblyId>
+              <archive>
+                <manifestEntries>
+                  <!-- Bitwig discovers the extension via this manifest entry -->
+                  <Bitwig-Extension-Definition-Class>com.apcsequencer.ApcKey25SequencerExtensionDefinition</Bitwig-Extension-Definition-Class>
+                </manifestEntries>
+              </archive>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- 4. Rename .jar → .bwextension and copy to Bitwig extensions folder -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>3.1.0</version>
+        <executions>
+          <execution>
+            <id>install-extension</id>
+            <phase>package</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <target>
+                <mkdir dir="${bitwig.extensions.dir}"/>
+                <copy file="${project.build.directory}/ApcKey25Sequencer.jar"
+                      tofile="${bitwig.extensions.dir}/ApcKey25Sequencer.bwextension"
+                      overwrite="true"/>
+                <echo message="Installed to ${bitwig.extensions.dir}/ApcKey25Sequencer.bwextension"/>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+    </plugins>
+  </build>
+
+</project>

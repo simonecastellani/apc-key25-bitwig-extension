@@ -1,0 +1,6 @@
+package com.apcsequencer;
+
+public enum Mode {
+    MAJOR, MINOR, DORIAN, PHRYGIAN, LYDIAN, MIXOLYDIAN, LOCRIAN,
+    PENTATONIC_MAJOR, PENTATONIC_MINOR, CHROMATIC
+}
