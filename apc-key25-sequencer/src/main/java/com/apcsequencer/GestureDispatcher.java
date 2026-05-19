@@ -1,6 +1,5 @@
 package com.apcsequencer;
 
-import com.bitwig.extension.controller.api.Application;
 import com.bitwig.extension.controller.api.ControllerHost;
 import com.bitwig.extension.controller.api.MidiOut;
 
@@ -19,9 +18,8 @@ public final class GestureDispatcher {
 
     private final SequencerState     state;
     private final ClipWriter         clipWriter;
-    private final Application        application;
-    private final MidiOut            midiOut;
     private final ControllerHost     host;
+    private final MidiOut            midiOut;
 
     /**
      * Playhead positions, one per track (0-based step index; -1 = not playing).
@@ -31,14 +29,12 @@ public final class GestureDispatcher {
 
     public GestureDispatcher(SequencerState state,
                              ClipWriter clipWriter,
-                             Application application,
                              MidiOut midiOut,
                              ControllerHost host) {
-        this.state       = state;
-        this.clipWriter  = clipWriter;
-        this.application = application;
-        this.midiOut     = midiOut;
-        this.host        = host;
+        this.state      = state;
+        this.clipWriter = clipWriter;
+        this.midiOut    = midiOut;
+        this.host       = host;
     }
 
     // -----------------------------------------------------------------------
@@ -53,9 +49,9 @@ public final class GestureDispatcher {
         if (gesture instanceof StepToggleGesture g) {
             handleStepToggle(g);
         } else if (gesture instanceof UndoGesture) {
-            application.undo();
+            host.println("Undo requested (not wired to Application)");
         } else if (gesture instanceof RedoGesture) {
-            application.redo();
+            host.println("Redo requested (not wired to Application)");
         }
     }
 
@@ -91,18 +87,12 @@ public final class GestureDispatcher {
 
     private void handleStepToggle(StepToggleGesture g) {
         StateDiff diff = state.toggleStep(g.track(), g.step());
-        host.println("[APC] stepToggle track=" + g.track() + " step=" + g.step()
-                + " changes=" + diff.stepChanges().size());
 
         // Reflect every changed step to Bitwig
         for (StateDiff.StepChange change : diff.stepChanges()) {
             TrackState  track     = state.getTrack(change.trackIndex());
             StepState   step      = track.getStep(change.stepIndex());
             boolean     active    = step.isActive();
-            host.println("[APC]   writeStep track=" + change.trackIndex()
-                    + " step=" + change.stepIndex()
-                    + " active=" + active
-                    + " pitch=" + step.getPitch());
             clipWriter.writeStep(change.trackIndex(), change.stepIndex(), active, step);
         }
 

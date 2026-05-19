@@ -1,39 +1,35 @@
 package com.apcsequencer;
 
 import com.bitwig.extension.controller.ControllerExtension;
-import com.bitwig.extension.controller.api.Application;
 import com.bitwig.extension.controller.api.ControllerHost;
 import com.bitwig.extension.controller.api.CursorTrack;
 import com.bitwig.extension.controller.api.MidiIn;
 import com.bitwig.extension.controller.api.MidiOut;
+import com.bitwig.extension.controller.api.NoteInput;
 import com.bitwig.extension.controller.api.PinnableCursorClip;
 
-/**
- * Root extension class. Bitwig calls {@link #init()} on load and {@link #exit()} on unload.
- *
- * <h3>Architecture</h3>
- * <p>All clip writing goes through the {@code NoteStep} clip-writing API exclusively.
- * No raw MIDI note events are fired, and no real-time beat clock is subscribed to.
- * See docs/adr/0001-notestep-clip-writing-over-internal-clock.md.</p>
- *
- * <h3>Module wiring (tracer-bullet slice)</h3>
- * <pre>
- *   APC MIDI in ──► MidiRouter ──► InputModifierTracker ──► GestureDispatcher
- *                                                                │
- *                     SequencerState ◄──────────────────────────┤
- *                     BitwigClipWriter (→ CursorClip[]) ◄───────┤
- *                     LedRenderer → MidiOut ◄───────────────────┘
- * </pre>
- */
+import java.util.Arrays;
+
 public class ApcKey25SequencerExtension extends ControllerExtension {
 
-    private MidiIn              midiIn;
-    private MidiOut             midiOut;
-    private SequencerState      sequencerState;
-    private GestureDispatcher   gestureDispatcher;
+    private static final int PORT_ALL_IN  = 0;
+    private static final int PORT_LED_OUT = 0;
+
+    // All pad rows: notes 0x00–0x27 (rows 4–0, bottom to top)
+    private static final int PAD_MIN = 0x00;
+    private static final int PAD_MAX = 0x27;
+
+    // Scene Launch buttons 1–5: channel 0, notes 0x52–0x56
+    private static final int SCENE_LAUNCH_MIN = 0x52;
+    private static final int SCENE_LAUNCH_MAX = 0x56;
+
+    // Keep CursorTrack references alive to prevent garbage collection.
+    @SuppressWarnings("FieldCanBeLocal")
+    private CursorTrack[] cursors;
 
     protected ApcKey25SequencerExtension(
-            ApcKey25SequencerExtensionDefinition definition, ControllerHost host) {
+            ApcKey25SequencerExtensionDefinition definition,
+            ControllerHost host) {
         super(definition, host);
     }
 
@@ -41,138 +37,100 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
     public void init() {
         final ControllerHost host = getHost();
 
-        midiIn  = host.getMidiInPort(0);
-        midiOut = host.getMidiOutPort(0);
+        MidiIn  allIn  = host.getMidiInPort(PORT_ALL_IN);
+        MidiOut ledOut = host.getMidiOutPort(PORT_LED_OUT);
+
+        // Block all hardware notes from passing through to Bitwig instruments.
+        NoteInput noteInput = allIn.createNoteInput("APC Key 25 Seq");
+        noteInput.setKeyTranslationTable(blockAllTable());
 
         // ----------------------------------------------------------------
-        // 1. Domain state
-        // ----------------------------------------------------------------
-        sequencerState = new SequencerState();
-
-        // ----------------------------------------------------------------
-        // 2. Bitwig cursor clips (5 tracks × 8 steps × 128 pitches)
+        // Bitwig cursor clips — one independent CursorTrack per sequencer track.
         //
-        // createLauncherCursorClip() is on CursorTrack, not Track.
-        // We create one independent CursorTrack per sequencer track and
-        // navigate it to position t using selectFirst() + selectNext()×t.
-        // This is more reliable than selectChannel(trackBank.getItemAt(t))
-        // which suffers from async resolution timing at init.
+        // Using 5 separate CursorTrack objects (not one shared cursor) ensures
+        // each PinnableCursorClip follows its own, independently-navigated
+        // cursor and therefore targets a different track. A single shared cursor
+        // would make all 5 clips aliases of the same position.
+        //
+        // selectFirst() + selectNext()×t on a CursorTrack navigates only regular
+        // (instrument/MIDI) tracks — it does NOT navigate FX/send or master
+        // tracks — so clips are never accidentally created on those.
         // ----------------------------------------------------------------
         PinnableCursorClip[] clips = new PinnableCursorClip[SequencerState.TRACK_COUNT];
-        for (int t = 0; t < SequencerState.TRACK_COUNT; t++) {
-            CursorTrack cursor = host.createCursorTrack(
-                    "seq-track-" + t, "Sequencer Track " + t, 0, 8, false);
+        cursors = new CursorTrack[SequencerState.TRACK_COUNT];
 
-            // Navigate to track t: first → then step forward t times
+        SequencerState state = new SequencerState();
+
+        for (int t = 0; t < SequencerState.TRACK_COUNT; t++) {
+            final int trackIndex = t;
+
+            CursorTrack cursor = host.createCursorTrack(
+                    "seq-track-" + t, "Sequencer Track " + t, 0, 1, false);
+            cursors[t] = cursor;
+
+            // Navigate this cursor to its target track.
             cursor.selectFirst();
             for (int i = 0; i < t; i++) {
                 cursor.selectNext();
             }
 
+            // createLauncherCursorClip must be called during init().
             clips[t] = cursor.createLauncherCursorClip(TrackState.STEP_COUNT, 128);
 
-            // Navigate the launcher cursor to slot 0 so setStep() has a target clip.
+            // Navigate the launcher cursor to slot 0 so setStep() has a target.
             cursor.selectSlot(0);
 
-            final int trackIndex = t;
+            final PinnableCursorClip clip = clips[t];
             final CursorTrack finalCursor = cursor;
-            final PinnableCursorClip finalClip = clips[t];
 
-            // Configure clip (stepSize, loopEnabled, loopLength) only once a real clip exists.
-            // setStepSize() is a no-op on a phantom cursor proxy — must fire inside this observer.
-            finalClip.exists().markInterested();
-            finalClip.exists().addValueObserver(exists -> {
+            // Configure clip dimensions once it exists.
+            clip.exists().addValueObserver(exists -> {
                 if (exists) {
-                    host.println("[APC] Track " + trackIndex + " clip exists → configuring");
-                    double beatTime = sequencerState.getTrack(trackIndex).getStepDuration().beatTime();
-                    finalClip.setStepSize(beatTime);
-                    finalClip.isLoopEnabled().set(true);
-                    finalClip.getLoopLength().set(TrackState.STEP_COUNT * beatTime);
+                    double beatTime = state.getTrack(trackIndex).getStepDuration().beatTime();
+                    clip.setStepSize(beatTime);
+                    clip.scrollToKey(60);
                 }
             });
 
             // Auto-create an empty clip at slot 0 if none exists yet.
-            // setStep() is a silent no-op when the cursor points to an empty slot.
+            // setStep() is a silent no-op when the cursor points at an empty slot.
             cursor.getClipLauncherSlots().getItemAt(0).hasContent().addValueObserver(has -> {
                 if (!has) {
-                    host.println("[APC] Track " + trackIndex + ": slot 0 empty → creating clip");
                     finalCursor.createNewLauncherClip(0, 4);
-                } else {
-                    host.println("[APC] Track " + trackIndex + ": slot 0 has content → ready");
                 }
             });
 
-            // Register playhead observer for this track
-            finalClip.playingStep().addValueObserver(step ->
-                    gestureDispatcher.setPlayhead(trackIndex, step));
-
-            // Debug: log which Bitwig track each cursor resolved to
+            // Log which Bitwig track each cursor resolved to.
             cursor.name().markInterested();
             cursor.name().addValueObserver(name ->
-                    host.println("[APC] Track " + trackIndex + " cursor → \"" + name + "\""));
+                    host.println("ApcKey25Sequencer: track " + trackIndex + " -> \"" + name + "\""));
         }
 
         // ----------------------------------------------------------------
-        // 3. ClipWriter
+        // Wire up the domain model and dispatcher.
         // ----------------------------------------------------------------
-        ClipWriter clipWriter = new BitwigClipWriter(clips, sequencerState);
+        BitwigClipWriter clipWriter = new BitwigClipWriter(clips, state, host);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, ledOut, host);
 
-        // ----------------------------------------------------------------
-        // 4. Application (for undo/redo)
-        // ----------------------------------------------------------------
-        Application application = host.createApplication();
-
-        // ----------------------------------------------------------------
-        // 5. GestureDispatcher
-        // ----------------------------------------------------------------
-        gestureDispatcher = new GestureDispatcher(
-                sequencerState, clipWriter, application, midiOut, host);
-
-        // ----------------------------------------------------------------
-        // 6. InputModifierTracker + MidiRouter
-        // ----------------------------------------------------------------
         InputModifierTracker tracker = new InputModifierTracker();
-        new MidiRouter(midiIn, tracker, gestureDispatcher);
+        new MidiRouter(allIn, tracker, dispatcher);
 
-        // ----------------------------------------------------------------
-        // 7. Initial LED flush
-        // ----------------------------------------------------------------
-        allLedsOff();           // reset any stale LEDs left by previous integrations
-        gestureDispatcher.flushLeds();
+        dispatcher.flushLeds();
 
-        host.showPopupNotification("APC Key 25 Sequencer loaded");
-        host.println("APC Key 25 Polyrhythmic Sequencer initialised");
+        host.println("APC Key 25 Sequencer init OK - " + SequencerState.TRACK_COUNT + " tracks");
     }
+
+    private static Integer[] blockAllTable() {
+        Integer[] table = new Integer[128];
+        Arrays.fill(table, -1);
+        return table;
+    }
+
+    @Override
+    public void flush() {}
 
     @Override
     public void exit() {
-        // Reset all LEDs on exit so the hardware is not left in a lit state
-        allLedsOff();
-        getHost().println("APC Key 25 Polyrhythmic Sequencer exited");
-    }
-
-    @Override
-    public void flush() {
-        // Called by Bitwig when it is safe to send MIDI output.
-        // Incremental LED updates are sent immediately in GestureDispatcher.flushLeds();
-        // nothing extra needed here for the tracer-bullet slice.
-    }
-
-    // -------------------------------------------------------------------------
-    // Private helpers
-    // -------------------------------------------------------------------------
-
-    /** Turn off all addressable LEDs: pads (0x00–0x27) and scene/button LEDs (0x40–0x62). */
-    private void allLedsOff() {
-        if (midiOut == null) return;
-        // Pad matrix
-        for (int note = 0x00; note <= 0x27; note++) {
-            midiOut.sendMidi(0x90, note, 0x00);
-        }
-        // Buttons and scene launch buttons (0x40–0x62 covers UP/DOWN/LEFT/RIGHT,
-        // VOLUME/PAN/SEND/DEVICE, STOP_ALL_CLIPS, SCENE_LAUNCH 0-4, PLAY/REC, SHIFT)
-        for (int note = 0x40; note <= 0x62; note++) {
-            midiOut.sendMidi(0x90, note, 0x00);
-        }
+        getHost().println("APC Key 25 Sequencer exit");
     }
 }
