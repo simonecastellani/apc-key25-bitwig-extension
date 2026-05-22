@@ -68,6 +68,27 @@ class LedRendererTest {
     }
 
     @Test
+    void playhead_step_above_visible_grid_wraps_within_track_loop() {
+        SequencerState state = new SequencerState();
+        int[] playhead = {47, -1, -1, -1, -1};
+
+        int[][] leds = LedRenderer.render(state, playhead);
+
+        assertEquals(3, leds[0][7], "playhead 47 should map to visible step 7");
+    }
+
+    @Test
+    void wrapped_playhead_uses_current_loop_end_point_not_fixed_8() {
+        SequencerState state = new SequencerState();
+        state.setLoopEndPoint(0, 4);
+        int[] playhead = {10, -1, -1, -1, -1};
+
+        int[][] leds = LedRenderer.render(state, playhead);
+
+        assertEquals(3, leds[0][2], "playhead 10 should map to step 2 in 4-step loop");
+    }
+
+    @Test
     void non_playhead_steps_are_unaffected_by_playhead_position() {
         SequencerState state = new SequencerState();
         state.toggleStep(0, 1); // step 1 active

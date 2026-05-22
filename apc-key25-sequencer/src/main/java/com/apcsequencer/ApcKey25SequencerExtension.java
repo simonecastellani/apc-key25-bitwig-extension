@@ -7,6 +7,8 @@ import com.bitwig.extension.controller.api.MidiIn;
 import com.bitwig.extension.controller.api.MidiOut;
 import com.bitwig.extension.controller.api.NoteInput;
 import com.bitwig.extension.controller.api.PinnableCursorClip;
+import com.bitwig.extension.controller.api.Track;
+import com.bitwig.extension.controller.api.TrackBank;
 
 import java.util.Arrays;
 
@@ -27,6 +29,11 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
     @SuppressWarnings("FieldCanBeLocal")
     private CursorTrack[] cursors;
 
+    @SuppressWarnings("FieldCanBeLocal")
+    private TrackBank mainTrackBank;
+
+    private MidiOut ledOutPort;
+
     protected ApcKey25SequencerExtension(
             ApcKey25SequencerExtensionDefinition definition,
             ControllerHost host) {
@@ -39,6 +46,7 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
 
         MidiIn  allIn  = host.getMidiInPort(PORT_ALL_IN);
         MidiOut ledOut = host.getMidiOutPort(PORT_LED_OUT);
+        ledOutPort = ledOut;
 
         // Block all hardware notes from passing through to Bitwig instruments.
         NoteInput noteInput = allIn.createNoteInput("APC Key 25 Seq");
@@ -58,59 +66,116 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
         // ----------------------------------------------------------------
         PinnableCursorClip[] clips = new PinnableCursorClip[SequencerState.TRACK_COUNT];
         cursors = new CursorTrack[SequencerState.TRACK_COUNT];
+        mainTrackBank = host.createMainTrackBank(SequencerState.TRACK_COUNT, 0, 1);
+        boolean[] clipCreateRequested = new boolean[SequencerState.TRACK_COUNT];
 
         SequencerState state = new SequencerState();
 
         for (int t = 0; t < SequencerState.TRACK_COUNT; t++) {
             final int trackIndex = t;
+            final Track bankTrack = mainTrackBank.getItemAt(trackIndex);
+            bankTrack.exists().markInterested();
 
             CursorTrack cursor = host.createCursorTrack(
                     "seq-track-" + t, "Sequencer Track " + t, 0, 1, false);
             cursors[t] = cursor;
-
-            // Navigate this cursor to its target track.
-            cursor.selectFirst();
-            for (int i = 0; i < t; i++) {
-                cursor.selectNext();
-            }
+            cursor.exists().markInterested();
 
             // createLauncherCursorClip must be called during init().
             clips[t] = cursor.createLauncherCursorClip(TrackState.STEP_COUNT, 128);
-
-            // Navigate the launcher cursor to slot 0 so setStep() has a target.
-            cursor.selectSlot(0);
+            clips[t].playingStep().markInterested();
 
             final PinnableCursorClip clip = clips[t];
             final CursorTrack finalCursor = cursor;
+            clip.exists().markInterested();
 
             // Configure clip dimensions once it exists.
             clip.exists().addValueObserver(exists -> {
                 if (exists) {
                     double beatTime = state.getTrack(trackIndex).getStepDuration().beatTime();
                     clip.setStepSize(beatTime);
-                    clip.scrollToKey(60);
                 }
             });
 
             // Auto-create an empty clip at slot 0 if none exists yet.
             // setStep() is a silent no-op when the cursor points at an empty slot.
-            cursor.getClipLauncherSlots().getItemAt(0).hasContent().addValueObserver(has -> {
-                if (!has) {
-                    finalCursor.createNewLauncherClip(0, 4);
+            final var slot0 = cursor.getClipLauncherSlots().getItemAt(0);
+            slot0.hasContent().markInterested();
+            slot0.hasContent().addValueObserver(has -> {
+                if (has) {
+                    clipCreateRequested[trackIndex] = false;
                 }
             });
 
+            Runnable ensureClipReady = () -> {
+                boolean cursorExists = finalCursor.exists().get();
+                boolean slotHasContent = slot0.hasContent().get();
+
+                if (!cursorExists) {
+                    clipCreateRequested[trackIndex] = false;
+                    return;
+                }
+
+                finalCursor.selectSlot(0);
+
+                if (!slotHasContent && !clipCreateRequested[trackIndex]) {
+                    clipCreateRequested[trackIndex] = true;
+                    finalCursor.createNewLauncherClip(0, 4);
+                }
+            };
+
+            cursor.exists().addValueObserver(exists -> {
+                if (exists) {
+                    ensureClipReady.run();
+                }
+            });
+
+            slot0.hasContent().addValueObserver(has -> {
+                if (!has) {
+                    ensureClipReady.run();
+                }
+            });
+
+            final int[] bindAttempts = {0};
+            final Runnable[] bindCursorToTrack = new Runnable[1];
+            bindCursorToTrack[0] = () -> {
+                bindAttempts[0]++;
+                boolean bankExists = bankTrack.exists().get();
+
+                if (bankExists) {
+                    finalCursor.selectChannel(bankTrack);
+                    finalCursor.selectSlot(0);
+                }
+
+                ensureClipReady.run();
+
+                if (!finalCursor.exists().get() && bindAttempts[0] < 20) {
+                    host.scheduleTask(bindCursorToTrack[0], 250);
+                }
+            };
+
+            bankTrack.exists().addValueObserver(exists -> {
+                if (exists) {
+                    bindCursorToTrack[0].run();
+                }
+            });
+
+            host.scheduleTask(bindCursorToTrack[0], 50);
+
             // Log which Bitwig track each cursor resolved to.
             cursor.name().markInterested();
-            cursor.name().addValueObserver(name ->
-                    host.println("ApcKey25Sequencer: track " + trackIndex + " -> \"" + name + "\""));
         }
 
         // ----------------------------------------------------------------
         // Wire up the domain model and dispatcher.
         // ----------------------------------------------------------------
-        BitwigClipWriter clipWriter = new BitwigClipWriter(clips, state, host);
+        BitwigClipWriter clipWriter = new BitwigClipWriter(clips, state);
         GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, ledOut, host);
+
+        for (int t = 0; t < SequencerState.TRACK_COUNT; t++) {
+            final int trackIndex = t;
+            clips[t].playingStep().addValueObserver(step -> dispatcher.setPlayhead(trackIndex, step));
+        }
 
         InputModifierTracker tracker = new InputModifierTracker();
         new MidiRouter(allIn, tracker, dispatcher);
@@ -131,6 +196,19 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
 
     @Override
     public void exit() {
+        sendAllLedsOff(ledOutPort);
         getHost().println("APC Key 25 Sequencer exit");
+    }
+
+    static void sendAllLedsOff(MidiOut ledOut) {
+        if (ledOut == null) return;
+
+        for (int note = PAD_MIN; note <= PAD_MAX; note++) {
+            ledOut.sendMidi(0x90, note, 0);
+        }
+
+        for (int note = 0x40; note <= 0x62; note++) {
+            ledOut.sendMidi(0x90, note, 0);
+        }
     }
 }

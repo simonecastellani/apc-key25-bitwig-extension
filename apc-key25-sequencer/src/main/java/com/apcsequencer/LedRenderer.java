@@ -61,7 +61,7 @@ public final class LedRenderer {
             TrackState track     = state.getTrack(t);
             int loopEnd          = track.getLoopEndPoint();   // 1-based count, marker at loopEnd-1
             int loopEndStep      = loopEnd - 1;               // 0-based index of the marker
-            int playhead         = playheadPerTrack[t];
+            int playhead         = normalizePlayhead(playheadPerTrack[t], loopEnd);
 
             for (int s = 0; s < TrackState.STEP_COUNT; s++) {
                 boolean active = track.getStep(s).isActive();
@@ -89,5 +89,12 @@ public final class LedRenderer {
         }
 
         return leds;
+    }
+
+    private static int normalizePlayhead(int rawPlayhead, int loopEnd) {
+        if (rawPlayhead < 0) {
+            return -1;
+        }
+        return rawPlayhead % loopEnd;
     }
 }

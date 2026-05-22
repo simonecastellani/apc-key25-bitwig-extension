@@ -2,11 +2,9 @@ package com.apcsequencer;
 
 import com.bitwig.extension.callback.BooleanValueChangedCallback;
 import com.bitwig.extension.controller.api.BooleanValue;
-import com.bitwig.extension.controller.api.ControllerHost;
 import com.bitwig.extension.controller.api.PinnableCursorClip;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -24,13 +22,11 @@ class BitwigClipWriterTest {
     private PinnableCursorClip[]              clips;
     private BooleanValueChangedCallback[]     existsCallbacks;
     private SequencerState                    state;
-    private ControllerHost                    host;
     private BitwigClipWriter                  writer;
 
     @BeforeEach
     void setUp() {
         state  = new SequencerState();
-        host   = mock(ControllerHost.class);
         clips  = new PinnableCursorClip[TRACK_COUNT];
         existsCallbacks = new BooleanValueChangedCallback[TRACK_COUNT];
 
@@ -38,6 +34,7 @@ class BitwigClipWriterTest {
             PinnableCursorClip clip = mock(PinnableCursorClip.class);
             BooleanValue existsValue = mock(BooleanValue.class);
             when(clip.exists()).thenReturn(existsValue);
+            when(existsValue.get()).thenReturn(false);
 
             // Capture the callback so tests can fire exists=true/false manually.
             final int idx = t;
@@ -49,7 +46,7 @@ class BitwigClipWriterTest {
             clips[t] = clip;
         }
 
-        writer = new BitwigClipWriter(clips, state, host);
+        writer = new BitwigClipWriter(clips, state);
 
         // Mark all clips ready (simulate Bitwig reporting exists=true).
         for (int t = 0; t < TRACK_COUNT; t++) {
@@ -122,10 +119,11 @@ class BitwigClipWriterTest {
                 freshCallbacks[idx] = inv.getArgument(0);
                 return null;
             }).when(existsValue).addValueObserver(any(BooleanValueChangedCallback.class));
+            when(existsValue.get()).thenReturn(false);
             freshClips[t] = clip;
         }
 
-        BitwigClipWriter freshWriter = new BitwigClipWriter(freshClips, state, host);
+        BitwigClipWriter freshWriter = new BitwigClipWriter(freshClips, state);
 
         // Write to track 2 before that clip is ready.
         freshWriter.writeStep(2, 5, true, new StepState());
@@ -137,5 +135,28 @@ class BitwigClipWriterTest {
         freshCallbacks[2].valueChanged(true);
 
         verify(freshClips[2], times(1)).setStep(anyInt(), eq(5), anyInt(), anyInt(), anyDouble());
+    }
+
+    @Test
+    void writeStep_applies_immediately_when_clip_already_exists_even_without_observer_callback() {
+        PinnableCursorClip[] freshClips = new PinnableCursorClip[TRACK_COUNT];
+
+        for (int t = 0; t < TRACK_COUNT; t++) {
+            PinnableCursorClip clip = mock(PinnableCursorClip.class);
+            BooleanValue existsValue = mock(BooleanValue.class);
+            when(clip.exists()).thenReturn(existsValue);
+
+            boolean trackIsReady = t == 1;
+            when(existsValue.get()).thenReturn(trackIsReady);
+            doNothing().when(existsValue).addValueObserver(any(BooleanValueChangedCallback.class));
+
+            freshClips[t] = clip;
+        }
+
+        BitwigClipWriter freshWriter = new BitwigClipWriter(freshClips, state);
+
+        freshWriter.writeStep(1, 2, true, new StepState());
+
+        verify(freshClips[1], times(1)).setStep(anyInt(), eq(2), anyInt(), anyInt(), anyDouble());
     }
 }

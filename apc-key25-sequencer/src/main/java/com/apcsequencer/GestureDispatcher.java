@@ -1,5 +1,6 @@
 package com.apcsequencer;
 
+import com.bitwig.extension.controller.api.Application;
 import com.bitwig.extension.controller.api.ControllerHost;
 import com.bitwig.extension.controller.api.MidiOut;
 
@@ -18,7 +19,7 @@ public final class GestureDispatcher {
 
     private final SequencerState     state;
     private final ClipWriter         clipWriter;
-    private final ControllerHost     host;
+    private final Application        application;
     private final MidiOut            midiOut;
 
     /**
@@ -33,8 +34,8 @@ public final class GestureDispatcher {
                              ControllerHost host) {
         this.state      = state;
         this.clipWriter = clipWriter;
+        this.application = host.createApplication();
         this.midiOut    = midiOut;
-        this.host       = host;
     }
 
     // -----------------------------------------------------------------------
@@ -49,9 +50,9 @@ public final class GestureDispatcher {
         if (gesture instanceof StepToggleGesture g) {
             handleStepToggle(g);
         } else if (gesture instanceof UndoGesture) {
-            host.println("Undo requested (not wired to Application)");
+            application.undo();
         } else if (gesture instanceof RedoGesture) {
-            host.println("Redo requested (not wired to Application)");
+            application.redo();
         }
     }
 
