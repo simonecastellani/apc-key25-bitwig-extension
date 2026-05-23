@@ -232,6 +232,15 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
                 int next = clampInt(step.getScaleDegreeOffset() + g.delta(), -7, 7);
                 yield state.setStepScaleDegreeOffset(g.track(), g.step(), next);
             }
+            case CHORD_VOICING -> {
+                int direction = Integer.compare(g.delta(), 0);
+                if (direction == 0) {
+                    yield StateDiff.builder().build();
+                }
+                ChordVoicing[] voicings = ChordVoicing.values();
+                int next = Math.floorMod(step.getChordVoicing().ordinal() + direction, voicings.length);
+                yield state.setStepChordVoicing(g.track(), g.step(), voicings[next]);
+            }
             case RATCHET_COUNT -> {
                 int next = clampInt(step.getRatchetCount() + g.delta(), 1, 8);
                 yield state.setStepRatchetCount(g.track(), g.step(), next);

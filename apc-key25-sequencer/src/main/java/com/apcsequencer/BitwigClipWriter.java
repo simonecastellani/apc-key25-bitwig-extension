@@ -8,6 +8,7 @@ import com.bitwig.extension.controller.api.Track;
 import com.bitwig.extension.controller.api.ClipLauncherSlotBank;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.Deque;
 import java.util.List;
 
@@ -39,6 +40,7 @@ public final class BitwigClipWriter implements ClipWriter {
     private final boolean[] trackPlaying;
     private final boolean[] trackMuted;
     private final boolean[][] slotPlaying;
+    private final BitSet[][] writtenPitches;
     private PlaybackStateListener playbackStateListener;
 
     private static final class PendingWrite {
@@ -76,12 +78,16 @@ public final class BitwigClipWriter implements ClipWriter {
         this.trackPlaying = new boolean[SequencerState.TRACK_COUNT];
         this.trackMuted = new boolean[SequencerState.TRACK_COUNT];
         this.slotPlaying = new boolean[SequencerState.TRACK_COUNT][TrackState.SLOT_COUNT];
+        this.writtenPitches = new BitSet[SequencerState.TRACK_COUNT][TrackState.STEP_COUNT];
 
         for (int t = 0; t < SequencerState.TRACK_COUNT; t++) {
             ready[t] = false;
             pending.add(new ArrayDeque<>());
             trackPlaying[t] = false;
             pendingTrackTiming[t] = false;
+            for (int s = 0; s < TrackState.STEP_COUNT; s++) {
+                writtenPitches[t][s] = new BitSet(128);
+            }
 
             final int trackIndex = t;
             Track track = tracks[t];
@@ -251,24 +257,54 @@ public final class BitwigClipWriter implements ClipWriter {
         double stepBeatTime = trackState.getStepDuration().beatTime();
         double gateDuration = stepState.getGateLength() * stepBeatTime;
         int transposeSemitones = ScaleEngine.semitoneOffset(state.getGlobalScale(), stepState.getScaleDegreeOffset());
+        BitSet previous = writtenPitches[track][resolvedStep];
 
         if (active) {
-            clip.setStep(0, resolvedStep, effectivePitch, stepState.getVelocity(), gateDuration);
-            writeStepParameters(
-                    track,
-                    resolvedStep,
+            int[] targetPitches = ScaleEngine.chordPitches(
+                    state.getGlobalScale(),
                     effectivePitch,
-                    stepState.getVelocity() / 127.0,
-                    gateDuration,
-                    clamp(stepState.getProbability() * trackState.getTrackProbability(), 0.0, 1.0),
-                    stepState.getRatchetCount(),
-                    -stepState.getRatchetDecay(),
-                    NoteOccurrence.ALWAYS,
-                    recurrenceLength(stepState.getStepCondition()),
-                    recurrenceMask(stepState.getStepCondition()),
-                    transposeSemitones);
+                    stepState.getChordVoicing());
+
+            BitSet target = new BitSet(128);
+            for (int pitch : targetPitches) {
+                target.set((int) clamp(pitch, 0, 127));
+            }
+
+            for (int pitch = previous.nextSetBit(0); pitch >= 0; pitch = previous.nextSetBit(pitch + 1)) {
+                if (!target.get(pitch)) {
+                    clip.clearStep(0, resolvedStep, pitch);
+                }
+            }
+
+            for (int pitch : targetPitches) {
+                int clampedPitch = (int) clamp(pitch, 0, 127);
+                clip.setStep(0, resolvedStep, clampedPitch, stepState.getVelocity(), gateDuration);
+                writeStepParameters(
+                        track,
+                        resolvedStep,
+                        clampedPitch,
+                        stepState.getVelocity() / 127.0,
+                        gateDuration,
+                        clamp(stepState.getProbability() * trackState.getTrackProbability(), 0.0, 1.0),
+                        stepState.getRatchetCount(),
+                        -stepState.getRatchetDecay(),
+                        NoteOccurrence.ALWAYS,
+                        recurrenceLength(stepState.getStepCondition()),
+                        recurrenceMask(stepState.getStepCondition()),
+                        transposeSemitones);
+            }
+
+            previous.clear();
+            previous.or(target);
         } else {
-            clip.clearStep(0, resolvedStep, effectivePitch);
+            if (previous.isEmpty()) {
+                clip.clearStep(0, resolvedStep, effectivePitch);
+            } else {
+                for (int pitch = previous.nextSetBit(0); pitch >= 0; pitch = previous.nextSetBit(pitch + 1)) {
+                    clip.clearStep(0, resolvedStep, pitch);
+                }
+            }
+            previous.clear();
         }
     }
 
@@ -319,6 +355,7 @@ public final class BitwigClipWriter implements ClipWriter {
 
         for (int step = 0; step < TrackState.STEP_COUNT; step++) {
             clip.clearStepsAtX(0, step);
+            writtenPitches[track][step].clear();
         }
 
         for (int step = 0; step < TrackState.STEP_COUNT; step++) {
