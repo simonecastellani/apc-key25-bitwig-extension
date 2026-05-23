@@ -243,24 +243,28 @@ public final class BitwigClipWriter implements ClipWriter {
 
     private void applyWrite(int track, PinnableCursorClip clip,
                             int step, boolean active, StepState stepState) {
+        TrackState trackState = state.getTrack(track);
+        int resolvedStep = resolveStepPosition(step, trackState);
+        int effectivePitch = effectivePitch(stepState.getPitch(), trackState.getTranspose());
+        double stepBeatTime = trackState.getStepDuration().beatTime();
+        double gateDuration = stepState.getGateLength() * stepBeatTime;
+
         if (active) {
-            double stepBeatTime = state.getTrack(track).getStepDuration().beatTime();
-            double gateDuration = stepState.getGateLength() * stepBeatTime;
-            clip.setStep(0, step, stepState.getPitch(), stepState.getVelocity(), gateDuration);
+            clip.setStep(0, resolvedStep, effectivePitch, stepState.getVelocity(), gateDuration);
             writeStepParameters(
                     track,
-                    step,
-                    stepState.getPitch(),
+                    resolvedStep,
+                    effectivePitch,
                     stepState.getVelocity() / 127.0,
                     gateDuration,
-                    stepState.getProbability(),
+                    clamp(stepState.getProbability() * trackState.getTrackProbability(), 0.0, 1.0),
                     stepState.getRatchetCount(),
                     -stepState.getRatchetDecay(),
                     NoteOccurrence.ALWAYS,
                     recurrenceLength(stepState.getStepCondition()),
                     recurrenceMask(stepState.getStepCondition()));
         } else {
-            clip.clearStep(0, step, stepState.getPitch());
+            clip.clearStep(0, resolvedStep, effectivePitch);
         }
     }
 
@@ -300,10 +304,14 @@ public final class BitwigClipWriter implements ClipWriter {
     private void applyTrackTimingNow(int track, PinnableCursorClip clip) {
         TrackState trackState = state.getTrack(track);
         double stepBeatTime = trackState.getStepDuration().beatTime();
-        double loopLength = trackState.getLoopEndPoint() * stepBeatTime;
+        double baseLoopLength = trackState.getLoopEndPoint() * stepBeatTime;
+        double loopLength = baseLoopLength * trackState.getLoopMultiplier().factor();
+        double playStart = loopLength * trackState.getPhaseOffset();
 
         clip.setStepSize(stepBeatTime);
         clip.getLoopLength().set(loopLength);
+        clip.getPlayStart().set(playStart);
+        clip.getShuffle().set(trackState.getSwing() > 50);
 
         for (int step = 0; step < TrackState.STEP_COUNT; step++) {
             clip.clearStepsAtX(0, step);
@@ -315,5 +323,21 @@ public final class BitwigClipWriter implements ClipWriter {
                 applyWrite(track, clip, step, true, stepState);
             }
         }
+    }
+
+    private static int resolveStepPosition(int step, TrackState trackState) {
+        int loopEndPoint = trackState.getLoopEndPoint();
+        if (step < 0 || step >= loopEndPoint) {
+            return step;
+        }
+        return Math.floorMod(step + trackState.getPatternRotation(), loopEndPoint);
+    }
+
+    private static int effectivePitch(int pitch, int transpose) {
+        return (int) clamp(pitch + transpose, 0, 127);
+    }
+
+    private static double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
     }
 }

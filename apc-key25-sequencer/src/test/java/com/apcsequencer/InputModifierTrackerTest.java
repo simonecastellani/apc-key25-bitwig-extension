@@ -299,4 +299,28 @@ class InputModifierTrackerTest {
 
         assertNull(g);
     }
+
+    @Test
+    void held_scene_launch_plus_knob2_emits_pattern_rotation_gesture() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        tracker.handleButton(new ButtonEvent(ButtonId.SCENE_LAUNCH_0, true));
+        Gesture g = tracker.handleKnob(new KnobEvent(1, 1));
+
+        assertInstanceOf(PerTrackKnobTurnGesture.class, g);
+        PerTrackKnobTurnGesture turn = (PerTrackKnobTurnGesture) g;
+        assertEquals(0, turn.track());
+        assertEquals(PerTrackParameter.PATTERN_ROTATION, turn.parameter());
+        assertEquals(1, turn.delta());
+    }
+
+    @Test
+    void held_scene_launch_plus_knob7_emits_no_gesture() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        tracker.handleButton(new ButtonEvent(ButtonId.SCENE_LAUNCH_0, true));
+        Gesture g = tracker.handleKnob(new KnobEvent(6, 1));
+
+        assertNull(g);
+    }
 }

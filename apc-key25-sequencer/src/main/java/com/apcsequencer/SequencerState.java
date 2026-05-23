@@ -135,8 +135,13 @@ public final class SequencerState {
      * Returns an empty diff if the clamped value equals the current value.
      */
     public StateDiff setLoopEndPoint(int trackIndex, int value) {
-        int before = tracks[trackIndex].getLoopEndPoint();
-        int after  = tracks[trackIndex].setLoopEndPoint(value);
+        TrackState track = tracks[trackIndex];
+        int before = track.getLoopEndPoint();
+        int after  = track.setLoopEndPoint(value);
+        int maxRotation = Math.max(0, after - 1);
+        if (track.getPatternRotation() > maxRotation) {
+            track.setPatternRotation(maxRotation);
+        }
         if (before == after) return StateDiff.builder().build();
         return StateDiff.builder().addStepChange(trackIndex, after - 1).build();
     }
@@ -149,6 +154,54 @@ public final class SequencerState {
         TrackState track = tracks[trackIndex];
         if (track.getStepDuration() == stepDuration) return StateDiff.builder().build();
         track.setStepDuration(stepDuration);
+        return StateDiff.builder().addStepChange(trackIndex, 0).build();
+    }
+
+    public StateDiff setPatternRotation(int trackIndex, int patternRotation) {
+        TrackState track = tracks[trackIndex];
+        int max = Math.max(0, track.getLoopEndPoint() - 1);
+        int clamped = Math.max(0, Math.min(max, patternRotation));
+        if (track.getPatternRotation() == clamped) return StateDiff.builder().build();
+        track.setPatternRotation(clamped);
+        return StateDiff.builder().addStepChange(trackIndex, 0).build();
+    }
+
+    public StateDiff setSwing(int trackIndex, int swing) {
+        int clamped = Math.max(50, Math.min(75, swing));
+        TrackState track = tracks[trackIndex];
+        if (track.getSwing() == clamped) return StateDiff.builder().build();
+        track.setSwing(clamped);
+        return StateDiff.builder().addStepChange(trackIndex, 0).build();
+    }
+
+    public StateDiff setTranspose(int trackIndex, int transpose) {
+        int clamped = Math.max(-12, Math.min(12, transpose));
+        TrackState track = tracks[trackIndex];
+        if (track.getTranspose() == clamped) return StateDiff.builder().build();
+        track.setTranspose(clamped);
+        return StateDiff.builder().addStepChange(trackIndex, 0).build();
+    }
+
+    public StateDiff setTrackProbability(int trackIndex, double probability) {
+        double clamped = Math.max(0.0, Math.min(1.0, probability));
+        TrackState track = tracks[trackIndex];
+        if (Double.compare(track.getTrackProbability(), clamped) == 0) return StateDiff.builder().build();
+        track.setTrackProbability(clamped);
+        return StateDiff.builder().addStepChange(trackIndex, 0).build();
+    }
+
+    public StateDiff setLoopMultiplier(int trackIndex, LoopMultiplier loopMultiplier) {
+        TrackState track = tracks[trackIndex];
+        if (track.getLoopMultiplier() == loopMultiplier) return StateDiff.builder().build();
+        track.setLoopMultiplier(loopMultiplier);
+        return StateDiff.builder().addStepChange(trackIndex, 0).build();
+    }
+
+    public StateDiff setPhaseOffset(int trackIndex, double phaseOffset) {
+        double clamped = Math.max(0.0, Math.min(1.0, phaseOffset));
+        TrackState track = tracks[trackIndex];
+        if (Double.compare(track.getPhaseOffset(), clamped) == 0) return StateDiff.builder().build();
+        track.setPhaseOffset(clamped);
         return StateDiff.builder().addStepChange(trackIndex, 0).build();
     }
 
