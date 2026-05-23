@@ -218,4 +218,49 @@ class InputModifierTrackerTest {
 
         assertNull(g);
     }
+
+    @Test
+    void held_pad_plus_supported_knob_emits_per_step_knob_turn_gesture() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        tracker.handlePad(new PadEvent(2, 6, true));
+        Gesture g = tracker.handleKnob(new KnobEvent(0, 1));
+
+        assertInstanceOf(PerStepKnobTurnGesture.class, g);
+        PerStepKnobTurnGesture turn = (PerStepKnobTurnGesture) g;
+        assertEquals(2, turn.track());
+        assertEquals(6, turn.step());
+        assertEquals(PerStepParameter.VELOCITY, turn.parameter());
+        assertEquals(1, turn.delta());
+    }
+
+    @Test
+    void held_pad_plus_unsupported_knob_emits_no_gesture() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        tracker.handlePad(new PadEvent(0, 1, true));
+        Gesture g = tracker.handleKnob(new KnobEvent(3, 1));
+
+        assertNull(g);
+    }
+
+    @Test
+    void knob_turn_without_held_pad_emits_no_gesture() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        Gesture g = tracker.handleKnob(new KnobEvent(0, 1));
+
+        assertNull(g);
+    }
+
+    @Test
+    void held_pad_plus_knob_turn_suppresses_tap_toggle_on_release() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        tracker.handlePad(new PadEvent(4, 0, true));
+        tracker.handleKnob(new KnobEvent(1, 1));
+        Gesture release = tracker.handlePad(new PadEvent(4, 0, false));
+
+        assertNull(release);
+    }
 }

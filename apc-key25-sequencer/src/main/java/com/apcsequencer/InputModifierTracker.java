@@ -142,6 +142,30 @@ public final class InputModifierTracker {
         return new PitchAssignGesture(heldPadTrack, heldPadStep, event.pitch(), event.velocity());
     }
 
+    /**
+     * Process a knob event and return the appropriate gesture, or {@code null}.
+     *
+     * <p>For issue #6, when a pad is held, knob indices 1,2,3,6,7,8 (0-based 0,1,2,5,6,7)
+     * map to per-step Parameter Knob gestures.</p>
+     */
+    public Gesture handleKnob(KnobEvent event) {
+        if (heldPadTrack < 0 || heldPadStep < 0) return null;
+
+        PerStepParameter parameter = switch (event.knob()) {
+            case 0 -> PerStepParameter.VELOCITY;
+            case 1 -> PerStepParameter.GATE_LENGTH;
+            case 2 -> PerStepParameter.PROBABILITY;
+            case 5 -> PerStepParameter.RATCHET_COUNT;
+            case 6 -> PerStepParameter.RATCHET_DECAY;
+            case 7 -> PerStepParameter.STEP_CONDITION;
+            default -> null;
+        };
+        if (parameter == null || event.delta() == 0) return null;
+
+        pendingTapToggle = false;
+        return new PerStepKnobTurnGesture(heldPadTrack, heldPadStep, parameter, event.delta());
+    }
+
     // -----------------------------------------------------------------------
     // Package-private inspection (for GestureDispatcher / tests)
     // -----------------------------------------------------------------------

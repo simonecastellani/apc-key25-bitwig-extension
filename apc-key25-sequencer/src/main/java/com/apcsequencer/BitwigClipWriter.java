@@ -1,5 +1,7 @@
 package com.apcsequencer;
 
+import com.bitwig.extension.controller.api.NoteOccurrence;
+import com.bitwig.extension.controller.api.NoteStep;
 import com.bitwig.extension.controller.api.PinnableCursorClip;
 import com.bitwig.extension.controller.api.SettableBooleanValue;
 import com.bitwig.extension.controller.api.Track;
@@ -150,6 +152,38 @@ public final class BitwigClipWriter implements ClipWriter {
     }
 
     @Override
+    public void writeStepParameters(int track,
+                                    int step,
+                                    int pitch,
+                                    double velocity,
+                                    double duration,
+                                    double chance,
+                                    int repeatCount,
+                                    double repeatVelocityEnd,
+                                    NoteOccurrence occurrence,
+                                    int recurrenceLength,
+                                    int recurrenceMask) {
+        PinnableCursorClip clip = clips[track];
+        NoteStep noteStep = clip.getStep(0, step, pitch);
+        noteStep.setVelocity(velocity);
+        noteStep.setDuration(duration);
+        noteStep.setChance(chance);
+        noteStep.setIsChanceEnabled(true);
+        noteStep.setRepeatCount(repeatCount);
+        noteStep.setRepeatVelocityEnd(repeatVelocityEnd);
+        noteStep.setRepeatVelocityCurve(repeatVelocityEnd == 0.0 ? 0.0 : -1.0);
+        noteStep.setOccurrence(occurrence);
+        noteStep.setIsOccurrenceEnabled(occurrence != NoteOccurrence.ALWAYS);
+        if (recurrenceLength > 1) {
+            noteStep.setRecurrence(recurrenceLength, recurrenceMask);
+            noteStep.setIsRecurrenceEnabled(true);
+        } else {
+            noteStep.setIsRecurrenceEnabled(false);
+        }
+        noteStep.setIsRepeatEnabled(repeatCount > 1 || repeatVelocityEnd != 0.0);
+    }
+
+    @Override
     public void toggleTrackClipPlayback(int track, int slot) {
         ClipLauncherSlotBank slotBank = slotBanks[track];
         if (trackPlaying[track]) {
@@ -194,9 +228,39 @@ public final class BitwigClipWriter implements ClipWriter {
             double stepBeatTime = state.getTrack(track).getStepDuration().beatTime();
             double gateDuration = stepState.getGateLength() * stepBeatTime;
             clip.setStep(0, step, stepState.getPitch(), stepState.getVelocity(), gateDuration);
+            writeStepParameters(
+                    track,
+                    step,
+                    stepState.getPitch(),
+                    stepState.getVelocity() / 127.0,
+                    gateDuration,
+                    stepState.getProbability(),
+                    stepState.getRatchetCount(),
+                    -stepState.getRatchetDecay(),
+                    NoteOccurrence.ALWAYS,
+                    recurrenceLength(stepState.getStepCondition()),
+                    recurrenceMask(stepState.getStepCondition()));
         } else {
             clip.clearStep(0, step, stepState.getPitch());
         }
+    }
+
+    private static int recurrenceLength(StepCondition condition) {
+        return switch (condition) {
+            case ALWAYS -> 1;
+            case EVERY_2ND -> 2;
+            case EVERY_4TH -> 4;
+            case EVERY_8TH -> 8;
+        };
+    }
+
+    private static int recurrenceMask(StepCondition condition) {
+        return switch (condition) {
+            case ALWAYS -> 1;
+            case EVERY_2ND -> 0b01;
+            case EVERY_4TH -> 0b0001;
+            case EVERY_8TH -> 0b00000001;
+        };
     }
 
     private void setTrackReadyAndDrain(int trackIndex, PinnableCursorClip clip) {

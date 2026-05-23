@@ -12,5 +12,6 @@ package com.apcsequencer;
  */
 public sealed interface Gesture
         permits StepToggleGesture, PitchAssignGesture, UndoGesture, RedoGesture,
-                LaunchClipGesture, ToggleTransportGesture, StopAllGesture {
+                LaunchClipGesture, ToggleTransportGesture, StopAllGesture,
+                PerStepKnobTurnGesture {
 }

@@ -111,7 +111,7 @@ class MidiDecoderTest {
         KnobEvent evt = MidiDecoder.decodeKnob(0xb0, 0x30, 0x40);
         assertNotNull(evt);
         assertEquals(0, evt.knob(), "CC 0x30 → knob index 0");
-        assertEquals(0x40, evt.value());
+        assertEquals(0, evt.delta(), "0x40 is neutral/no movement");
     }
 
     @Test
@@ -119,6 +119,14 @@ class MidiDecoderTest {
         KnobEvent evt = MidiDecoder.decodeKnob(0xb0, 0x37, 0x7f);
         assertNotNull(evt);
         assertEquals(7, evt.knob(), "CC 0x37 → knob index 7");
+        assertEquals(1, evt.delta(), "0x7f should decode as +1");
+    }
+
+    @Test
+    void knob_turn_counterclockwise_decodes_to_negative_delta() {
+        KnobEvent evt = MidiDecoder.decodeKnob(0xb0, 0x35, 0x00);
+        assertNotNull(evt);
+        assertEquals(-1, evt.delta(), "0x00 should decode as -1");
     }
 
     @Test

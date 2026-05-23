@@ -242,4 +242,57 @@ class GestureDispatcherTest {
 
         verify(midiOut).sendMidi(0x90, 0x54, LedRenderer.YELLOW);
     }
+
+    @Test
+    void per_step_knob_velocity_updates_state_and_rewrites_step() {
+        SequencerState state = new SequencerState();
+        state.toggleStep(0, 0);
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        HostContext hostContext = hostContext();
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new PerStepKnobTurnGesture(0, 0, PerStepParameter.VELOCITY, 3));
+
+        assertEquals(103, state.getStep(0, 0).getVelocity());
+        verify(clipWriter).writeStep(eq(0), eq(0), eq(true), any(StepState.class));
+    }
+
+    @Test
+    void per_step_knob_velocity_is_clamped_to_valid_range() {
+        SequencerState state = new SequencerState();
+        state.setStepVelocity(1, 2, 0);
+        state.toggleStep(1, 2);
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        HostContext hostContext = hostContext();
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new PerStepKnobTurnGesture(1, 2, PerStepParameter.VELOCITY, -1));
+
+        assertEquals(0, state.getStep(1, 2).getVelocity());
+        verify(clipWriter, never()).writeStep(anyInt(), anyInt(), anyBoolean(), any(StepState.class));
+    }
+
+    @Test
+    void per_step_knob_step_condition_cycles_through_four_values() {
+        SequencerState state = new SequencerState();
+        state.toggleStep(2, 3);
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        HostContext hostContext = hostContext();
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new PerStepKnobTurnGesture(2, 3, PerStepParameter.STEP_CONDITION, 1));
+        assertEquals(StepCondition.EVERY_2ND, state.getStep(2, 3).getStepCondition());
+
+        dispatcher.dispatch(new PerStepKnobTurnGesture(2, 3, PerStepParameter.STEP_CONDITION, 1));
+        assertEquals(StepCondition.EVERY_4TH, state.getStep(2, 3).getStepCondition());
+
+        dispatcher.dispatch(new PerStepKnobTurnGesture(2, 3, PerStepParameter.STEP_CONDITION, 1));
+        assertEquals(StepCondition.EVERY_8TH, state.getStep(2, 3).getStepCondition());
+
+        dispatcher.dispatch(new PerStepKnobTurnGesture(2, 3, PerStepParameter.STEP_CONDITION, 1));
+        assertEquals(StepCondition.ALWAYS, state.getStep(2, 3).getStepCondition());
+    }
 }

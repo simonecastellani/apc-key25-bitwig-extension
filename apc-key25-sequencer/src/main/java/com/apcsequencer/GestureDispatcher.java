@@ -84,6 +84,8 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
             transport.togglePlay();
         } else if (gesture instanceof StopAllGesture) {
             clipWriter.stopAllTrackClips();
+        } else if (gesture instanceof PerStepKnobTurnGesture g) {
+            handlePerStepKnobTurn(g);
         }
     }
 
@@ -184,4 +186,54 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
         state.setFocusedTrack(track);
         clipWriter.toggleTrackClipPlayback(track, state.getTrack(track).getActiveSlot());
     }
+
+    private void handlePerStepKnobTurn(PerStepKnobTurnGesture g) {
+        StepState step = state.getStep(g.track(), g.step());
+        StateDiff diff = switch (g.parameter()) {
+            case VELOCITY -> {
+                int next = clampInt(step.getVelocity() + g.delta(), 0, 127);
+                yield state.setStepVelocity(g.track(), g.step(), next);
+            }
+            case GATE_LENGTH -> {
+                double next = clampDouble(step.getGateLength() + (g.delta() * 0.01), 0.01, 1.0);
+                yield state.setStepGateLength(g.track(), g.step(), next);
+            }
+            case PROBABILITY -> {
+                double next = clampDouble(step.getProbability() + (g.delta() * 0.01), 0.0, 1.0);
+                yield state.setStepProbability(g.track(), g.step(), next);
+            }
+            case RATCHET_COUNT -> {
+                int next = clampInt(step.getRatchetCount() + g.delta(), 1, 8);
+                yield state.setStepRatchetCount(g.track(), g.step(), next);
+            }
+            case RATCHET_DECAY -> {
+                double next = clampDouble(step.getRatchetDecay() + (g.delta() * 0.05), 0.0, 1.0);
+                yield state.setStepRatchetDecay(g.track(), g.step(), next);
+            }
+            case STEP_CONDITION -> {
+                StepCondition[] conditions = StepCondition.values();
+                int current = step.getStepCondition().ordinal();
+                int direction = Integer.compare(g.delta(), 0);
+                int next = Math.floorMod(current + direction, conditions.length);
+                yield state.setStepCondition(g.track(), g.step(), conditions[next]);
+            }
+        };
+
+        if (diff.isEmpty()) {
+            return;
+        }
+
+        StepState updated = state.getStep(g.track(), g.step());
+        clipWriter.writeStep(g.track(), g.step(), updated.isActive(), updated);
+        flushLeds();
+    }
+
+    private static int clampInt(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static double clampDouble(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
 }
