@@ -323,4 +323,88 @@ class GestureDispatcherTest {
         assertEquals(5, state.getTrack(2).getLoopEndPoint());
         verify(clipWriter).applyTrackTiming(2);
     }
+
+    @Test
+    void per_track_knob_pattern_rotation_updates_state_and_applies_track_timing() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        HostContext hostContext = hostContext();
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new PerTrackKnobTurnGesture(0, PerTrackParameter.PATTERN_ROTATION, 1));
+
+        assertEquals(1, state.getTrack(0).getPatternRotation());
+        verify(clipWriter).applyTrackTiming(0);
+    }
+
+    @Test
+    void per_track_knob_swing_updates_state_and_applies_track_timing() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        HostContext hostContext = hostContext();
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new PerTrackKnobTurnGesture(1, PerTrackParameter.SWING, 1));
+
+        assertEquals(51, state.getTrack(1).getSwing());
+        verify(clipWriter).applyTrackTiming(1);
+    }
+
+    @Test
+    void per_track_knob_transpose_updates_state_and_rewrites_track_timing() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        HostContext hostContext = hostContext();
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new PerTrackKnobTurnGesture(2, PerTrackParameter.TRANSPOSE, 1));
+
+        assertEquals(1, state.getTrack(2).getTranspose());
+        verify(clipWriter).applyTrackTiming(2);
+    }
+
+    @Test
+    void per_track_knob_probability_updates_state_and_applies_track_timing() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        HostContext hostContext = hostContext();
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new PerTrackKnobTurnGesture(3, PerTrackParameter.TRACK_PROBABILITY, -10));
+
+        assertEquals(0.9, state.getTrack(3).getTrackProbability(), 1e-9);
+        verify(clipWriter).applyTrackTiming(3);
+    }
+
+    @Test
+    void per_track_knob_loop_multiplier_cycles_values() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        HostContext hostContext = hostContext();
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new PerTrackKnobTurnGesture(4, PerTrackParameter.LOOP_MULTIPLIER, -1));
+
+        assertEquals(LoopMultiplier.HALF, state.getTrack(4).getLoopMultiplier());
+        verify(clipWriter).applyTrackTiming(4);
+    }
+
+    @Test
+    void per_track_knob_phase_offset_updates_state_and_applies_track_timing() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        HostContext hostContext = hostContext();
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new PerTrackKnobTurnGesture(0, PerTrackParameter.PHASE_OFFSET, 1));
+
+        assertEquals(0.01, state.getTrack(0).getPhaseOffset(), 1e-9);
+        verify(clipWriter).applyTrackTiming(0);
+    }
 }

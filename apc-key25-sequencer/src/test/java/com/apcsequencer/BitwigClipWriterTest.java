@@ -36,6 +36,8 @@ class BitwigClipWriterTest {
     private ClipLauncherSlotBank[]            slotBanks;
     private SettableBooleanValue[]            muteValues;
     private SettableBeatTimeValue[]           loopLengths;
+    private SettableBeatTimeValue[]           playStarts;
+    private SettableBooleanValue[]            shuffleValues;
     private SequencerState                    state;
     private BitwigClipWriter                  writer;
 
@@ -50,15 +52,21 @@ class BitwigClipWriterTest {
         slotBanks = new ClipLauncherSlotBank[TRACK_COUNT];
         muteValues = new SettableBooleanValue[TRACK_COUNT];
         loopLengths = new SettableBeatTimeValue[TRACK_COUNT];
+        playStarts = new SettableBeatTimeValue[TRACK_COUNT];
+        shuffleValues = new SettableBooleanValue[TRACK_COUNT];
 
         for (int t = 0; t < TRACK_COUNT; t++) {
             PinnableCursorClip clip = mock(PinnableCursorClip.class);
             BooleanValue existsValue = mock(BooleanValue.class);
             NoteStep noteStep = mock(NoteStep.class);
             SettableBeatTimeValue loopLength = mock(SettableBeatTimeValue.class);
+            SettableBeatTimeValue playStart = mock(SettableBeatTimeValue.class);
+            SettableBooleanValue shuffle = mock(SettableBooleanValue.class);
             when(clip.exists()).thenReturn(existsValue);
             when(clip.getStep(anyInt(), anyInt(), anyInt())).thenReturn(noteStep);
             when(clip.getLoopLength()).thenReturn(loopLength);
+            when(clip.getPlayStart()).thenReturn(playStart);
+            when(clip.getShuffle()).thenReturn(shuffle);
             when(existsValue.get()).thenReturn(false);
 
             // Capture the callback so tests can fire exists=true/false manually.
@@ -70,6 +78,8 @@ class BitwigClipWriterTest {
 
             clips[t] = clip;
             loopLengths[t] = loopLength;
+            playStarts[t] = playStart;
+            shuffleValues[t] = shuffle;
 
             Track track = mock(Track.class);
             ClipLauncherSlotBank slotBank = mock(ClipLauncherSlotBank.class);
@@ -313,9 +323,43 @@ class BitwigClipWriterTest {
 
         verify(clips[0]).setStepSize(0.5);
         verify(loopLengths[0]).set(2.5);
+        verify(playStarts[0]).set(0.0);
+        verify(shuffleValues[0]).set(false);
         verify(clips[0], times(TrackState.STEP_COUNT))
                 .clearStepsAtX(eq(0), anyInt());
         verify(clips[0], atLeastOnce())
                 .setStep(eq(0), eq(1), anyInt(), anyInt(), anyDouble());
+    }
+
+    @Test
+    void writeStep_applies_rotation_transpose_and_track_probability() {
+        state.setPatternRotation(0, 1);
+        state.setTranspose(0, 12);
+        state.setTrackProbability(0, 0.5);
+
+        StepState step = new StepState();
+        step.setPitch(60);
+        step.setProbability(0.8);
+
+        writer.writeStep(0, 2, true, step);
+
+        verify(clips[0]).setStep(eq(0), eq(3), eq(72), anyInt(), anyDouble());
+        NoteStep noteStep = clips[0].getStep(0, 3, 72);
+        verify(noteStep).setChance(0.4);
+    }
+
+    @Test
+    void applyTrackTiming_uses_loop_multiplier_phase_offset_and_shuffle_state() {
+        state.setStepDuration(0, StepDuration.S16);
+        state.setLoopEndPoint(0, 8);
+        state.setLoopMultiplier(0, LoopMultiplier.TWO);
+        state.setPhaseOffset(0, 0.25);
+        state.setSwing(0, 60);
+
+        writer.applyTrackTiming(0);
+
+        verify(loopLengths[0]).set(4.0);
+        verify(playStarts[0]).set(1.0);
+        verify(shuffleValues[0]).set(true);
     }
 }

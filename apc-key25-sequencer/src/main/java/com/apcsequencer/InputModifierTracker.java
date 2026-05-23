@@ -164,6 +164,19 @@ public final class InputModifierTracker {
                 pendingTapToggle = false;
                 return new TrackStepDurationTurnGesture(heldSceneTrack, event.delta());
             }
+            PerTrackParameter parameter = switch (event.knob()) {
+                case 1 -> PerTrackParameter.PATTERN_ROTATION;
+                case 2 -> PerTrackParameter.SWING;
+                case 3 -> PerTrackParameter.TRANSPOSE;
+                case 4 -> PerTrackParameter.TRACK_PROBABILITY;
+                case 5 -> PerTrackParameter.LOOP_MULTIPLIER;
+                case 7 -> PerTrackParameter.PHASE_OFFSET;
+                default -> null;
+            };
+            if (parameter != null && event.delta() != 0) {
+                pendingTapToggle = false;
+                return new PerTrackKnobTurnGesture(heldSceneTrack, parameter, event.delta());
+            }
             return null;
         }
 

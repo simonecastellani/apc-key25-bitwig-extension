@@ -90,6 +90,8 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
             handleTrackStepDurationTurn(g);
         } else if (gesture instanceof TrackLoopEndPointGesture g) {
             handleTrackLoopEndPoint(g);
+        } else if (gesture instanceof PerTrackKnobTurnGesture g) {
+            handlePerTrackKnobTurn(g);
         }
     }
 
@@ -251,6 +253,33 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
 
     private void handleTrackLoopEndPoint(TrackLoopEndPointGesture g) {
         StateDiff diff = state.setLoopEndPoint(g.track(), g.loopEndPoint());
+        if (diff.isEmpty()) {
+            return;
+        }
+        clipWriter.applyTrackTiming(g.track());
+        flushLeds();
+    }
+
+    private void handlePerTrackKnobTurn(PerTrackKnobTurnGesture g) {
+        TrackState track = state.getTrack(g.track());
+        StateDiff diff = switch (g.parameter()) {
+            case PATTERN_ROTATION -> state.setPatternRotation(g.track(), track.getPatternRotation() + g.delta());
+            case SWING -> state.setSwing(g.track(), track.getSwing() + g.delta());
+            case TRANSPOSE -> state.setTranspose(g.track(), track.getTranspose() + g.delta());
+            case TRACK_PROBABILITY ->
+                    state.setTrackProbability(g.track(), track.getTrackProbability() + (g.delta() * 0.01));
+            case LOOP_MULTIPLIER -> {
+                LoopMultiplier[] values = LoopMultiplier.values();
+                int current = track.getLoopMultiplier().ordinal();
+                int direction = Integer.compare(g.delta(), 0);
+                if (direction == 0) {
+                    yield StateDiff.builder().build();
+                }
+                int next = Math.floorMod(current + direction, values.length);
+                yield state.setLoopMultiplier(g.track(), values[next]);
+            }
+            case PHASE_OFFSET -> state.setPhaseOffset(g.track(), track.getPhaseOffset() + (g.delta() * 0.01));
+        };
         if (diff.isEmpty()) {
             return;
         }

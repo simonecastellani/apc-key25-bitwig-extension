@@ -150,6 +150,69 @@ class SequencerStateTest {
         assertTrue(diff.isEmpty());
     }
 
+    @Test
+    void setPatternRotation_clamps_to_loop_end_point_minus_one() {
+        SequencerState state = new SequencerState();
+        state.setLoopEndPoint(0, 4);
+
+        state.setPatternRotation(0, 99);
+
+        assertEquals(3, state.getTrack(0).getPatternRotation());
+    }
+
+    @Test
+    void setSwing_clamps_to_50_75_range() {
+        SequencerState state = new SequencerState();
+
+        state.setSwing(0, 10);
+        assertEquals(50, state.getTrack(0).getSwing());
+
+        state.setSwing(0, 100);
+        assertEquals(75, state.getTrack(0).getSwing());
+    }
+
+    @Test
+    void setTranspose_clamps_to_minus12_plus12() {
+        SequencerState state = new SequencerState();
+
+        state.setTranspose(0, -999);
+        assertEquals(-12, state.getTrack(0).getTranspose());
+
+        state.setTranspose(0, 999);
+        assertEquals(12, state.getTrack(0).getTranspose());
+    }
+
+    @Test
+    void setTrackProbability_clamps_to_zero_one_range() {
+        SequencerState state = new SequencerState();
+
+        state.setTrackProbability(0, -1.0);
+        assertEquals(0.0, state.getTrack(0).getTrackProbability(), 1e-9);
+
+        state.setTrackProbability(0, 2.0);
+        assertEquals(1.0, state.getTrack(0).getTrackProbability(), 1e-9);
+    }
+
+    @Test
+    void setLoopMultiplier_updates_track_value() {
+        SequencerState state = new SequencerState();
+
+        state.setLoopMultiplier(0, LoopMultiplier.FOUR);
+
+        assertEquals(LoopMultiplier.FOUR, state.getTrack(0).getLoopMultiplier());
+    }
+
+    @Test
+    void setPhaseOffset_clamps_to_zero_one_range() {
+        SequencerState state = new SequencerState();
+
+        state.setPhaseOffset(0, -0.5);
+        assertEquals(0.0, state.getTrack(0).getPhaseOffset(), 1e-9);
+
+        state.setPhaseOffset(0, 1.5);
+        assertEquals(1.0, state.getTrack(0).getPhaseOffset(), 1e-9);
+    }
+
     // -------------------------------------------------------------------------
     // Slice 5 — switchSlot to an empty slot copies current content (copy-on-first-select)
     // -------------------------------------------------------------------------
