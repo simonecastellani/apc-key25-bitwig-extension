@@ -193,6 +193,22 @@ public final class SequencerState {
         return StateDiff.builder().addStepChange(trackIndex, 0).build();
     }
 
+    public StateDiff setStaticPan(int trackIndex, double pan) {
+        double clamped = Math.max(-1.0, Math.min(1.0, pan));
+        TrackState track = tracks[trackIndex];
+        if (Double.compare(track.getStaticPan(), clamped) == 0) return StateDiff.builder().build();
+        track.setStaticPan(clamped);
+        return StateDiff.builder().addStepChange(trackIndex, 0).build();
+    }
+
+    public StateDiff setVelocitySpread(int trackIndex, double amount) {
+        double clamped = Math.max(0.0, Math.min(1.0, amount));
+        TrackState track = tracks[trackIndex];
+        if (Double.compare(track.getVelocitySpread(), clamped) == 0) return StateDiff.builder().build();
+        track.setVelocitySpread(clamped);
+        return StateDiff.builder().addStepChange(trackIndex, 0).build();
+    }
+
     public StateDiff setLoopMultiplier(int trackIndex, LoopMultiplier loopMultiplier) {
         TrackState track = tracks[trackIndex];
         if (track.getLoopMultiplier() == loopMultiplier) return StateDiff.builder().build();

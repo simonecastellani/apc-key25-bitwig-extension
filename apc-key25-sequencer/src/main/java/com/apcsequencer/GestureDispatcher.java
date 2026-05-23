@@ -20,6 +20,8 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
 
     private static final int SCENE_LAUNCH_NOTE_BASE = 0x52;
     private static final int PLAY_PAUSE_NOTE = 0x5B;
+    private static final int VOLUME_NOTE = 0x44;
+    private static final int PAN_NOTE = 0x45;
 
     private final SequencerState     state;
     private final ClipWriter         clipWriter;
@@ -36,6 +38,8 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
     private final boolean[] trackPlaying = new boolean[SequencerState.TRACK_COUNT];
     private final boolean[] trackMuted = new boolean[SequencerState.TRACK_COUNT];
     private boolean transportPlaying;
+    private boolean volumeHeld;
+    private boolean panHeld;
 
     public GestureDispatcher(SequencerState state,
                              ClipWriter clipWriter,
@@ -71,6 +75,16 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
      */
     public void dispatch(Gesture gesture) {
         if (gesture == null) return;
+        if (gesture instanceof SetVolumeHeldGesture g) {
+            volumeHeld = g.held();
+            flushLeds();
+            return;
+        }
+        if (gesture instanceof SetPanHeldGesture g) {
+            panHeld = g.held();
+            flushLeds();
+            return;
+        }
         if (gesture instanceof ToggleScaleSelectionOverlayGesture) {
             if (overlayController.getMode() == OverlayMode.SCALE_SELECTION) {
                 overlayController.returnToNormal();
@@ -105,6 +119,8 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
             transport.togglePlay();
         } else if (gesture instanceof StopAllGesture) {
             clipWriter.stopAllTrackClips();
+        } else if (gesture instanceof ToggleTrackMuteGesture g) {
+            clipWriter.toggleTrackMute(g.track());
         } else if (gesture instanceof PerStepKnobTurnGesture g) {
             handlePerStepKnobTurn(g);
         } else if (gesture instanceof TrackStepDurationTurnGesture g) {
@@ -172,8 +188,10 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
         }
 
         midiOut.sendMidi(0x90, PLAY_PAUSE_NOTE, transportPlaying ? LedRenderer.GREEN : LedRenderer.OFF);
-        midiOut.sendMidi(0x90, 0x44,
-                overlayController.getMode() == OverlayMode.SCALE_SELECTION ? LedRenderer.YELLOW : LedRenderer.OFF);
+        boolean scaleSelection = overlayController.getMode() == OverlayMode.SCALE_SELECTION;
+        midiOut.sendMidi(0x90, VOLUME_NOTE,
+                (volumeHeld || scaleSelection) ? LedRenderer.YELLOW : LedRenderer.OFF);
+        midiOut.sendMidi(0x90, PAN_NOTE, panHeld ? LedRenderer.YELLOW : LedRenderer.OFF);
     }
 
     @Override
@@ -342,6 +360,18 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
         }
         TrackState track = state.getTrack(g.track());
         StateDiff diff = switch (g.parameter()) {
+            case CLIP_VOLUME -> {
+                clipWriter.adjustTrackClipVolume(g.track(), g.delta());
+                yield StateDiff.builder().build();
+            }
+            case STATIC_PAN -> {
+                double next = clampDouble(track.getStaticPan() + (g.delta() * 0.01), -1.0, 1.0);
+                yield state.setStaticPan(g.track(), next);
+            }
+            case VELOCITY_SPREAD -> {
+                double next = clampDouble(track.getVelocitySpread() + (g.delta() * 0.01), 0.0, 1.0);
+                yield state.setVelocitySpread(g.track(), next);
+            }
             case PATTERN_ROTATION -> state.setPatternRotation(g.track(), track.getPatternRotation() + g.delta());
             case SWING -> state.setSwing(g.track(), track.getSwing() + g.delta());
             case TRANSPOSE -> state.setTranspose(g.track(), track.getTranspose() + g.delta());
@@ -362,6 +392,9 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
             case PHASE_OFFSET -> state.setPhaseOffset(g.track(), track.getPhaseOffset() + (g.delta() * 0.01));
         };
         if (diff.isEmpty()) {
+            if (g.parameter() == PerTrackParameter.CLIP_VOLUME) {
+                flushLeds();
+            }
             return;
         }
 
@@ -370,6 +403,10 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
                 StepState step = state.getStep(change.trackIndex(), change.stepIndex());
                 clipWriter.writeStep(change.trackIndex(), change.stepIndex(), step.isActive(), step);
             }
+        } else if (g.parameter() == PerTrackParameter.STATIC_PAN) {
+            clipWriter.applyTrackStaticPan(g.track());
+        } else if (g.parameter() == PerTrackParameter.VELOCITY_SPREAD) {
+            clipWriter.applyTrackVelocitySpread(g.track());
         } else {
             clipWriter.applyTrackTiming(g.track());
         }

@@ -2,6 +2,7 @@ package com.apcsequencer;
 
 import com.bitwig.extension.controller.api.NoteOccurrence;
 import com.bitwig.extension.controller.api.NoteStep;
+import com.bitwig.extension.controller.api.Parameter;
 import com.bitwig.extension.controller.api.PinnableCursorClip;
 import com.bitwig.extension.controller.api.SettableBooleanValue;
 import com.bitwig.extension.controller.api.Track;
@@ -32,6 +33,7 @@ public final class BitwigClipWriter implements ClipWriter {
     private final PinnableCursorClip[] clips;
     private final ClipLauncherSlotBank[] slotBanks;
     private final SettableBooleanValue[] muteValues;
+    private final Parameter[] trackVolumes;
     private final SequencerState       state;
 
     private final boolean[]            ready;
@@ -71,6 +73,7 @@ public final class BitwigClipWriter implements ClipWriter {
         this.clips   = clips;
         this.slotBanks = new ClipLauncherSlotBank[SequencerState.TRACK_COUNT];
         this.muteValues = new SettableBooleanValue[SequencerState.TRACK_COUNT];
+        this.trackVolumes = new Parameter[SequencerState.TRACK_COUNT];
         this.state   = state;
         this.ready   = new boolean[SequencerState.TRACK_COUNT];
         this.pendingTrackTiming = new boolean[SequencerState.TRACK_COUNT];
@@ -126,6 +129,10 @@ public final class BitwigClipWriter implements ClipWriter {
             });
             muteValues[t] = mute;
             trackMuted[t] = mute.get();
+
+            Parameter volume = track.volume();
+            volume.markInterested();
+            trackVolumes[t] = volume;
 
             PinnableCursorClip clip = clips[t];
 
@@ -192,6 +199,9 @@ public final class BitwigClipWriter implements ClipWriter {
         }
         noteStep.setIsRepeatEnabled(repeatCount > 1 || repeatVelocityEnd != 0.0);
         noteStep.setTranspose(transposeSemitones);
+        TrackState trackState = state.getTrack(track);
+        noteStep.setPan(trackState.getStaticPan());
+        noteStep.setVelocitySpread(trackState.getVelocitySpread());
     }
 
     @Override
@@ -208,6 +218,29 @@ public final class BitwigClipWriter implements ClipWriter {
         }
 
         applyTrackTimingNow(track, clip);
+    }
+
+    @Override
+    public void adjustTrackClipVolume(int track, int delta) {
+        if (delta == 0) {
+            return;
+        }
+        trackVolumes[track].inc(delta * 0.01);
+    }
+
+    @Override
+    public void toggleTrackMute(int track) {
+        muteValues[track].set(!trackMuted[track]);
+    }
+
+    @Override
+    public void applyTrackStaticPan(int track) {
+        applyPerTrackNoteStepModulation(track, true);
+    }
+
+    @Override
+    public void applyTrackVelocitySpread(int track) {
+        applyPerTrackNoteStepModulation(track, false);
     }
 
     @Override
@@ -315,6 +348,35 @@ public final class BitwigClipWriter implements ClipWriter {
             case EVERY_4TH -> 4;
             case EVERY_8TH -> 8;
         };
+    }
+
+    private void applyPerTrackNoteStepModulation(int track, boolean pan) {
+        PinnableCursorClip clip = clips[track];
+        TrackState trackState = state.getTrack(track);
+
+        for (int step = 0; step < TrackState.STEP_COUNT; step++) {
+            StepState stepState = trackState.getStep(step);
+            if (!stepState.isActive()) {
+                continue;
+            }
+
+            int resolvedStep = resolveStepPosition(step, trackState);
+            int effectivePitch = effectivePitch(stepState.getPitch(), trackState.getTranspose());
+            int[] targetPitches = ScaleEngine.chordPitches(
+                    state.getGlobalScale(),
+                    effectivePitch,
+                    stepState.getChordVoicing());
+
+            for (int pitch : targetPitches) {
+                int clampedPitch = (int) clamp(pitch, 0, 127);
+                NoteStep noteStep = clip.getStep(0, resolvedStep, clampedPitch);
+                if (pan) {
+                    noteStep.setPan(trackState.getStaticPan());
+                } else {
+                    noteStep.setVelocitySpread(trackState.getVelocitySpread());
+                }
+            }
+        }
     }
 
     private static int recurrenceMask(StepCondition condition) {

@@ -6,6 +6,7 @@ import com.bitwig.extension.controller.api.BooleanValue;
 import com.bitwig.extension.controller.api.ClipLauncherSlotBank;
 import com.bitwig.extension.controller.api.NoteOccurrence;
 import com.bitwig.extension.controller.api.NoteStep;
+import com.bitwig.extension.controller.api.Parameter;
 import com.bitwig.extension.controller.api.PinnableCursorClip;
 import com.bitwig.extension.controller.api.SettableBeatTimeValue;
 import com.bitwig.extension.controller.api.SettableBooleanValue;
@@ -36,6 +37,7 @@ class BitwigClipWriterTest {
     private ClipLauncherSlotBankPlaybackStateChangedCallback[] playbackCallbacks;
     private ClipLauncherSlotBank[]            slotBanks;
     private SettableBooleanValue[]            muteValues;
+    private Parameter[]                       trackVolumes;
     private SettableBeatTimeValue[]           loopLengths;
     private SettableBeatTimeValue[]           playStarts;
     private SettableBooleanValue[]            shuffleValues;
@@ -52,6 +54,7 @@ class BitwigClipWriterTest {
         playbackCallbacks = new ClipLauncherSlotBankPlaybackStateChangedCallback[TRACK_COUNT];
         slotBanks = new ClipLauncherSlotBank[TRACK_COUNT];
         muteValues = new SettableBooleanValue[TRACK_COUNT];
+        trackVolumes = new Parameter[TRACK_COUNT];
         loopLengths = new SettableBeatTimeValue[TRACK_COUNT];
         playStarts = new SettableBeatTimeValue[TRACK_COUNT];
         shuffleValues = new SettableBooleanValue[TRACK_COUNT];
@@ -85,8 +88,10 @@ class BitwigClipWriterTest {
             Track track = mock(Track.class);
             ClipLauncherSlotBank slotBank = mock(ClipLauncherSlotBank.class);
             SettableBooleanValue mute = mock(SettableBooleanValue.class);
+            Parameter volume = mock(Parameter.class);
             when(track.clipLauncherSlotBank()).thenReturn(slotBank);
             when(track.mute()).thenReturn(mute);
+            when(track.volume()).thenReturn(volume);
             when(mute.get()).thenReturn(false);
 
             final int idxTrack = t;
@@ -103,6 +108,7 @@ class BitwigClipWriterTest {
             tracks[t] = track;
             slotBanks[t] = slotBank;
             muteValues[t] = mute;
+            trackVolumes[t] = volume;
         }
 
         writer = new BitwigClipWriter(clips, tracks, state);
@@ -189,8 +195,10 @@ class BitwigClipWriterTest {
             Track track = mock(Track.class);
             ClipLauncherSlotBank slotBank = mock(ClipLauncherSlotBank.class);
             SettableBooleanValue mute = mock(SettableBooleanValue.class);
+            Parameter volume = mock(Parameter.class);
             when(track.clipLauncherSlotBank()).thenReturn(slotBank);
             when(track.mute()).thenReturn(mute);
+            when(track.volume()).thenReturn(volume);
             when(mute.get()).thenReturn(false);
             doNothing().when(slotBank).addPlaybackStateObserver(any(ClipLauncherSlotBankPlaybackStateChangedCallback.class));
             doNothing().when(mute).addValueObserver(any(BooleanValueChangedCallback.class));
@@ -234,8 +242,10 @@ class BitwigClipWriterTest {
             Track track = mock(Track.class);
             ClipLauncherSlotBank slotBank = mock(ClipLauncherSlotBank.class);
             SettableBooleanValue mute = mock(SettableBooleanValue.class);
+            Parameter volume = mock(Parameter.class);
             when(track.clipLauncherSlotBank()).thenReturn(slotBank);
             when(track.mute()).thenReturn(mute);
+            when(track.volume()).thenReturn(volume);
             when(mute.get()).thenReturn(false);
             doNothing().when(slotBank).addPlaybackStateObserver(any(ClipLauncherSlotBankPlaybackStateChangedCallback.class));
             doNothing().when(mute).addValueObserver(any(BooleanValueChangedCallback.class));
@@ -295,6 +305,25 @@ class BitwigClipWriterTest {
     }
 
     @Test
+    void adjust_track_clip_volume_increments_track_volume_parameter() {
+        writer.adjustTrackClipVolume(2, 3);
+
+        verify(trackVolumes[2]).inc(0.03);
+    }
+
+    @Test
+    void toggle_track_mute_flips_current_mute_state() {
+        muteCallbacks[1].valueChanged(false);
+        writer.toggleTrackMute(1);
+        verify(muteValues[1]).set(true);
+
+        reset(muteValues[1]);
+        muteCallbacks[1].valueChanged(true);
+        writer.toggleTrackMute(1);
+        verify(muteValues[1]).set(false);
+    }
+
+    @Test
     void write_step_parameters_sets_notestep_fields() {
         NoteStep noteStep = mock(NoteStep.class);
         when(clips[0].getStep(anyInt(), anyInt(), anyInt())).thenReturn(noteStep);
@@ -313,6 +342,28 @@ class BitwigClipWriterTest {
         verify(noteStep).setRecurrence(4, 0b0001);
         verify(noteStep).setIsRecurrenceEnabled(true);
         verify(noteStep).setTranspose(7);
+        verify(noteStep).setPan(0.0);
+        verify(noteStep).setVelocitySpread(0.0);
+    }
+
+    @Test
+    void apply_track_static_pan_sets_pan_on_active_steps() {
+        state.setStepActive(0, 1, true);
+        state.setStaticPan(0, 0.25);
+
+        writer.applyTrackStaticPan(0);
+
+        verify(clips[0].getStep(0, 1, 60)).setPan(0.25);
+    }
+
+    @Test
+    void apply_track_velocity_spread_sets_spread_on_active_steps() {
+        state.setStepActive(0, 1, true);
+        state.setVelocitySpread(0, 0.4);
+
+        writer.applyTrackVelocitySpread(0);
+
+        verify(clips[0].getStep(0, 1, 60)).setVelocitySpread(0.4);
     }
 
     @Test

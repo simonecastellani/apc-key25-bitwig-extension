@@ -66,6 +66,31 @@ public interface ClipWriter {
     void applyTrackTiming(int track);
 
     /**
+     * Adjusts the active clip's volume for a track.
+     *
+     * @param track 0-based track index (0-4)
+     * @param delta signed knob movement
+     */
+    void adjustTrackClipVolume(int track, int delta);
+
+    /**
+     * Toggles mute on the given track.
+     */
+    void toggleTrackMute(int track);
+
+    /**
+     * Applies static pan to all active NoteSteps in the track's active clip
+     * using the current value in sequencer state.
+     */
+    void applyTrackStaticPan(int track);
+
+    /**
+     * Applies velocity spread to all active NoteSteps in the track's active clip
+     * using the current value in sequencer state.
+     */
+    void applyTrackVelocitySpread(int track);
+
+    /**
      * Toggles play/stop for a track's active Sequence Slot.
      */
     void toggleTrackClipPlayback(int track, int slot);
