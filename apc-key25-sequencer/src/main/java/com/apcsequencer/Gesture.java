@@ -22,5 +22,6 @@ public sealed interface Gesture
                  ScaleSelectionPadGesture,
                  SetSequenceBankOverlayGesture, SequenceBankPadGesture,
                  MoveAllTracksSequenceSlotGesture,
-                 SetCopyOverlayGesture, CopyPadGesture, CopyTrackGesture {
+                 SetCopyOverlayGesture, CopyPadGesture, CopyTrackGesture,
+                 SetClearOverlayGesture, ClearPadGesture, ClearTrackGesture {
 }

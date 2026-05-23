@@ -135,8 +135,25 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
             flushLeds();
             return;
         }
+        if (gesture instanceof SetClearOverlayGesture g) {
+            if (g.active()) {
+                overlayController.enterClear();
+            } else if (overlayController.getMode() == OverlayMode.CLEAR) {
+                overlayController.returnToNormal();
+            }
+            flushLeds();
+            return;
+        }
         if (gesture instanceof SequenceBankPadGesture g) {
             handleSequenceBankPad(g);
+            return;
+        }
+        if (gesture instanceof ClearPadGesture g) {
+            handleClearPad(g);
+            return;
+        }
+        if (gesture instanceof ClearTrackGesture g) {
+            handleClearTrack(g);
             return;
         }
         if (gesture instanceof CopyPadGesture g) {
@@ -604,6 +621,32 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
             clipWriter.applyTrackTiming(g.track());
         }
         overlayController.returnToNormal();
+        flushLeds();
+    }
+
+    private void handleClearPad(ClearPadGesture g) {
+        if (overlayController.getMode() != OverlayMode.CLEAR) {
+            return;
+        }
+        StateDiff diff = state.clearStep(g.track(), g.step());
+        if (!diff.isEmpty()) {
+            StepState step = state.getStep(g.track(), g.step());
+            clipWriter.writeStep(g.track(), g.step(), false, step);
+        }
+        flushLeds();
+    }
+
+    private void handleClearTrack(ClearTrackGesture g) {
+        if (overlayController.getMode() != OverlayMode.CLEAR) {
+            return;
+        }
+        StateDiff diff = state.clearTrackSteps(g.track());
+        if (!diff.isEmpty()) {
+            for (int step = 0; step < TrackState.STEP_COUNT; step++) {
+                StepState cleared = state.getStep(g.track(), step);
+                clipWriter.writeStep(g.track(), step, false, cleared);
+            }
+        }
         flushLeds();
     }
 

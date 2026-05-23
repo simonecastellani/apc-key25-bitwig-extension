@@ -51,6 +51,7 @@ public final class InputModifierTracker {
     private boolean sequenceBankOverlayActive = false;
     private boolean sequenceBankClearMode = false;
     private boolean copyOverlayActive = false;
+    private boolean clearOverlayActive = false;
 
     // -----------------------------------------------------------------------
     // Public API
@@ -60,6 +61,14 @@ public final class InputModifierTracker {
      * Process a pad event and return the appropriate gesture, or {@code null}.
      */
     public Gesture handlePad(PadEvent event) {
+        if (clearOverlayActive) {
+            if (event.pressed()) {
+                pendingTapToggle = false;
+                return new ClearPadGesture(event.track(), event.step());
+            }
+            return null;
+        }
+
         if (copyOverlayActive) {
             if (event.pressed()) {
                 pendingTapToggle = false;
@@ -122,6 +131,21 @@ public final class InputModifierTracker {
      */
     public Gesture handleButton(ButtonEvent event) {
         ButtonId id = event.id();
+
+        if (clearOverlayActive && event.pressed()) {
+            int sceneTrack = sceneLaunchTrack(id);
+            if (sceneTrack >= 0) {
+                return new ClearTrackGesture(sceneTrack);
+            }
+        }
+
+        if (id == ButtonId.SUSTAIN && event.pressed() && heldModifiers.contains(ButtonId.SHIFT)) {
+            clearOverlayActive = true;
+            if (heldPadTrack >= 0 && heldPadStep >= 0) {
+                pendingTapToggle = false;
+            }
+            return new SetClearOverlayGesture(true);
+        }
 
         if (id == ButtonId.SUSTAIN && event.pressed() && !heldModifiers.contains(ButtonId.SHIFT)) {
             copyOverlayActive = !copyOverlayActive;
@@ -252,6 +276,10 @@ public final class InputModifierTracker {
                 }
             } else {
                 heldModifiers.remove(id);
+                if (id == ButtonId.SHIFT && clearOverlayActive) {
+                    clearOverlayActive = false;
+                    return new SetClearOverlayGesture(false);
+                }
                 if (id == ButtonId.SHIFT && scaleSelectionOverlayActive) {
                     scaleSelectionOverlayActive = false;
                     return new DismissScaleSelectionOverlayGesture();
