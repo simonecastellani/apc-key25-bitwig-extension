@@ -295,4 +295,32 @@ class GestureDispatcherTest {
         dispatcher.dispatch(new PerStepKnobTurnGesture(2, 3, PerStepParameter.STEP_CONDITION, 1));
         assertEquals(StepCondition.ALWAYS, state.getStep(2, 3).getStepCondition());
     }
+
+    @Test
+    void track_step_duration_turn_cycles_step_duration_and_applies_track_timing() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        HostContext hostContext = hostContext();
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new TrackStepDurationTurnGesture(1, 1));
+
+        assertEquals(StepDuration.S16T, state.getTrack(1).getStepDuration());
+        verify(clipWriter).applyTrackTiming(1);
+    }
+
+    @Test
+    void track_loop_end_point_updates_state_and_applies_track_timing() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        HostContext hostContext = hostContext();
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new TrackLoopEndPointGesture(2, 5));
+
+        assertEquals(5, state.getTrack(2).getLoopEndPoint());
+        verify(clipWriter).applyTrackTiming(2);
+    }
 }

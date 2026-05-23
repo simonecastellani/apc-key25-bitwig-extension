@@ -7,6 +7,7 @@ import com.bitwig.extension.controller.api.ClipLauncherSlotBank;
 import com.bitwig.extension.controller.api.NoteOccurrence;
 import com.bitwig.extension.controller.api.NoteStep;
 import com.bitwig.extension.controller.api.PinnableCursorClip;
+import com.bitwig.extension.controller.api.SettableBeatTimeValue;
 import com.bitwig.extension.controller.api.SettableBooleanValue;
 import com.bitwig.extension.controller.api.Track;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,6 +35,7 @@ class BitwigClipWriterTest {
     private ClipLauncherSlotBankPlaybackStateChangedCallback[] playbackCallbacks;
     private ClipLauncherSlotBank[]            slotBanks;
     private SettableBooleanValue[]            muteValues;
+    private SettableBeatTimeValue[]           loopLengths;
     private SequencerState                    state;
     private BitwigClipWriter                  writer;
 
@@ -47,13 +49,16 @@ class BitwigClipWriterTest {
         playbackCallbacks = new ClipLauncherSlotBankPlaybackStateChangedCallback[TRACK_COUNT];
         slotBanks = new ClipLauncherSlotBank[TRACK_COUNT];
         muteValues = new SettableBooleanValue[TRACK_COUNT];
+        loopLengths = new SettableBeatTimeValue[TRACK_COUNT];
 
         for (int t = 0; t < TRACK_COUNT; t++) {
             PinnableCursorClip clip = mock(PinnableCursorClip.class);
             BooleanValue existsValue = mock(BooleanValue.class);
             NoteStep noteStep = mock(NoteStep.class);
+            SettableBeatTimeValue loopLength = mock(SettableBeatTimeValue.class);
             when(clip.exists()).thenReturn(existsValue);
             when(clip.getStep(anyInt(), anyInt(), anyInt())).thenReturn(noteStep);
+            when(clip.getLoopLength()).thenReturn(loopLength);
             when(existsValue.get()).thenReturn(false);
 
             // Capture the callback so tests can fire exists=true/false manually.
@@ -64,6 +69,7 @@ class BitwigClipWriterTest {
             }).when(existsValue).addValueObserver(any(BooleanValueChangedCallback.class));
 
             clips[t] = clip;
+            loopLengths[t] = loopLength;
 
             Track track = mock(Track.class);
             ClipLauncherSlotBank slotBank = mock(ClipLauncherSlotBank.class);
@@ -295,5 +301,21 @@ class BitwigClipWriterTest {
         verify(noteStep).setIsOccurrenceEnabled(true);
         verify(noteStep).setRecurrence(4, 0b0001);
         verify(noteStep).setIsRecurrenceEnabled(true);
+    }
+
+    @Test
+    void applyTrackTiming_sets_step_size_and_loop_length_and_rewrites_all_steps() {
+        state.setStepDuration(0, StepDuration.S8);
+        state.setLoopEndPoint(0, 5);
+        state.setStepActive(0, 1, true);
+
+        writer.applyTrackTiming(0);
+
+        verify(clips[0]).setStepSize(0.5);
+        verify(loopLengths[0]).set(2.5);
+        verify(clips[0], times(TrackState.STEP_COUNT))
+                .clearStepsAtX(eq(0), anyInt());
+        verify(clips[0], atLeastOnce())
+                .setStep(eq(0), eq(1), anyInt(), anyInt(), anyDouble());
     }
 }

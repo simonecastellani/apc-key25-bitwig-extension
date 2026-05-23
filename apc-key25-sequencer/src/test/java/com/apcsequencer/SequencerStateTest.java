@@ -131,6 +131,25 @@ class SequencerStateTest {
         assertTrue(diff.isEmpty(), "no change → diff must be empty");
     }
 
+    @Test
+    void setStepDuration_changes_track_step_duration_and_returns_nonempty_diff() {
+        SequencerState state = new SequencerState();
+
+        StateDiff diff = state.setStepDuration(0, StepDuration.S8);
+
+        assertEquals(StepDuration.S8, state.getTrack(0).getStepDuration());
+        assertFalse(diff.isEmpty());
+    }
+
+    @Test
+    void setStepDuration_with_same_value_returns_empty_diff() {
+        SequencerState state = new SequencerState();
+
+        StateDiff diff = state.setStepDuration(0, StepDuration.S16);
+
+        assertTrue(diff.isEmpty());
+    }
+
     // -------------------------------------------------------------------------
     // Slice 5 — switchSlot to an empty slot copies current content (copy-on-first-select)
     // -------------------------------------------------------------------------
