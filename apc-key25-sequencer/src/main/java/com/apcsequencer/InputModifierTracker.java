@@ -46,6 +46,9 @@ public final class InputModifierTracker {
     /** True when current held-pad interaction should emit a tap-toggle on release. */
     private boolean pendingTapToggle = false;
 
+    /** Local mirror of Scale Selection overlay state. */
+    private boolean scaleSelectionOverlayActive = false;
+
     // -----------------------------------------------------------------------
     // Public API
     // -----------------------------------------------------------------------
@@ -54,6 +57,13 @@ public final class InputModifierTracker {
      * Process a pad event and return the appropriate gesture, or {@code null}.
      */
     public Gesture handlePad(PadEvent event) {
+        if (scaleSelectionOverlayActive) {
+            if (event.pressed()) {
+                return new ScaleSelectionPadGesture(event.track(), event.step());
+            }
+            return null;
+        }
+
         if (!event.pressed()) {
             Gesture releaseGesture = null;
 
@@ -94,6 +104,12 @@ public final class InputModifierTracker {
     public Gesture handleButton(ButtonEvent event) {
         ButtonId id = event.id();
 
+        if (id == ButtonId.VOLUME && event.pressed() && heldModifiers.contains(ButtonId.SHIFT)) {
+            heldModifiers.add(ButtonId.VOLUME);
+            scaleSelectionOverlayActive = !scaleSelectionOverlayActive;
+            return new ToggleScaleSelectionOverlayGesture();
+        }
+
         if (event.pressed() && !isAnyModifierHeld()) {
             if (id == ButtonId.PLAY_PAUSE) {
                 return new ToggleTransportGesture();
@@ -120,6 +136,10 @@ public final class InputModifierTracker {
                 }
             } else {
                 heldModifiers.remove(id);
+                if (id == ButtonId.SHIFT && scaleSelectionOverlayActive) {
+                    scaleSelectionOverlayActive = false;
+                    return new DismissScaleSelectionOverlayGesture();
+                }
             }
             return null;
         }

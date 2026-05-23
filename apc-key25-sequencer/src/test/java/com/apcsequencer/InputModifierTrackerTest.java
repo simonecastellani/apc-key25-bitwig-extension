@@ -357,4 +357,39 @@ class InputModifierTrackerTest {
         assertEquals(PerTrackParameter.EUCLIDEAN_DISTRIBUTION, turn.parameter());
         assertEquals(1, turn.delta());
     }
+
+    @Test
+    void shift_plus_volume_press_toggles_scale_selection_overlay() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        tracker.handleButton(new ButtonEvent(ButtonId.SHIFT, true));
+        Gesture g = tracker.handleButton(new ButtonEvent(ButtonId.VOLUME, true));
+
+        assertInstanceOf(ToggleScaleSelectionOverlayGesture.class, g);
+    }
+
+    @Test
+    void pad_press_while_scale_selection_active_emits_scale_selection_pad_gesture() {
+        InputModifierTracker tracker = new InputModifierTracker();
+        tracker.handleButton(new ButtonEvent(ButtonId.SHIFT, true));
+        tracker.handleButton(new ButtonEvent(ButtonId.VOLUME, true));
+
+        Gesture g = tracker.handlePad(new PadEvent(0, 3, true));
+
+        assertInstanceOf(ScaleSelectionPadGesture.class, g);
+        ScaleSelectionPadGesture select = (ScaleSelectionPadGesture) g;
+        assertEquals(0, select.track());
+        assertEquals(3, select.step());
+    }
+
+    @Test
+    void shift_release_while_scale_selection_active_emits_dismiss_overlay_gesture() {
+        InputModifierTracker tracker = new InputModifierTracker();
+        tracker.handleButton(new ButtonEvent(ButtonId.SHIFT, true));
+        tracker.handleButton(new ButtonEvent(ButtonId.VOLUME, true));
+
+        Gesture g = tracker.handleButton(new ButtonEvent(ButtonId.SHIFT, false));
+
+        assertInstanceOf(DismissScaleSelectionOverlayGesture.class, g);
+    }
 }

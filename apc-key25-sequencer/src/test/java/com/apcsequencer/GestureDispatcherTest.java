@@ -584,4 +584,66 @@ class GestureDispatcherTest {
         assertEquals(5, clipWriter.writes().get(2).step);
         assertTrue(clipWriter.writes().get(2).active);
     }
+
+    @Test
+    void toggle_scale_selection_overlay_switches_volume_led_on_and_off() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new ToggleScaleSelectionOverlayGesture());
+
+        verify(midiOut).sendMidi(0x90, 0x44, LedRenderer.YELLOW);
+
+        reset(midiOut);
+        dispatcher.dispatch(new ToggleScaleSelectionOverlayGesture());
+        verify(midiOut).sendMidi(0x90, 0x44, LedRenderer.OFF);
+    }
+
+    @Test
+    void scale_selection_pad_updates_global_root_and_rewrites_active_steps() {
+        SequencerState state = new SequencerState();
+        state.toggleStep(0, 1);
+        state.setStepScaleDegreeOffset(0, 1, 2);
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+        dispatcher.dispatch(new ToggleScaleSelectionOverlayGesture());
+
+        dispatcher.dispatch(new ScaleSelectionPadGesture(0, 4));
+
+        assertEquals(4, state.getGlobalScale().root());
+        verify(clipWriter).writeStep(eq(0), eq(1), eq(true), any(StepState.class));
+    }
+
+    @Test
+    void scale_selection_pad_updates_mode_and_rewrites_active_steps() {
+        SequencerState state = new SequencerState();
+        state.toggleStep(3, 2);
+        state.setStepScaleDegreeOffset(3, 2, -2);
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+        dispatcher.dispatch(new ToggleScaleSelectionOverlayGesture());
+
+        dispatcher.dispatch(new ScaleSelectionPadGesture(1, 2));
+
+        assertEquals(Mode.DORIAN, state.getGlobalScale().mode());
+        verify(clipWriter).writeStep(eq(3), eq(2), eq(true), any(StepState.class));
+    }
+
+    @Test
+    void dismiss_scale_selection_overlay_returns_to_normal_and_turns_off_volume_led() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+        dispatcher.dispatch(new ToggleScaleSelectionOverlayGesture());
+
+        reset(midiOut);
+        dispatcher.dispatch(new DismissScaleSelectionOverlayGesture());
+
+        verify(midiOut).sendMidi(0x90, 0x44, LedRenderer.OFF);
+    }
 }
