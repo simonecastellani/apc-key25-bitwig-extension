@@ -11,6 +11,9 @@ public final class OverlayController {
 
     private OverlayMode currentMode = OverlayMode.NORMAL;
     private boolean sequenceBankClearMode;
+    private Integer copySourceTrack;
+    private Integer copySourceStep;
+    private Integer copySourceSceneTrack;
 
     /** Returns the currently active overlay mode. */
     public OverlayMode getMode() {
@@ -39,7 +42,44 @@ public final class OverlayController {
 
     /** Activates Copy mode (Sustain pedal). */
     public void enterCopy() {
-        currentMode = OverlayMode.COPY;
+        currentMode = OverlayMode.COPY_SOURCE;
+        clearCopySelection();
+    }
+
+    /** Chooses a step as copy source and waits for a target selection. */
+    public void selectCopySourceStep(int track, int step) {
+        copySourceTrack = track;
+        copySourceStep = step;
+        copySourceSceneTrack = null;
+        currentMode = OverlayMode.COPY_TARGET;
+    }
+
+    /** Chooses a track as copy source and waits for a target selection. */
+    public void selectCopySourceTrack(int track) {
+        copySourceSceneTrack = track;
+        copySourceTrack = null;
+        copySourceStep = null;
+        currentMode = OverlayMode.COPY_TARGET;
+    }
+
+    public boolean hasCopyStepSource() {
+        return copySourceTrack != null && copySourceStep != null;
+    }
+
+    public boolean hasCopyTrackSource() {
+        return copySourceSceneTrack != null;
+    }
+
+    public int copySourceTrack() {
+        return copySourceTrack;
+    }
+
+    public int copySourceStep() {
+        return copySourceStep;
+    }
+
+    public int copySourceSceneTrack() {
+        return copySourceSceneTrack;
     }
 
     /** Activates Clear mode (Shift + Sustain). */
@@ -51,5 +91,12 @@ public final class OverlayController {
     public void returnToNormal() {
         currentMode = OverlayMode.NORMAL;
         sequenceBankClearMode = false;
+        clearCopySelection();
+    }
+
+    private void clearCopySelection() {
+        copySourceTrack = null;
+        copySourceStep = null;
+        copySourceSceneTrack = null;
     }
 }

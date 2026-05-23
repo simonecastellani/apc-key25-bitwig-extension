@@ -126,6 +126,34 @@ public final class SequencerState {
         return StateDiff.builder().addStepChange(trackIndex, stepIndex).build();
     }
 
+    /**
+     * Copies all step parameters from one step to another.
+     */
+    public StateDiff copyStep(int sourceTrack,
+                              int sourceStep,
+                              int destinationTrack,
+                              int destinationStep) {
+        StepState source = tracks[sourceTrack].getStep(sourceStep);
+        StepState destination = tracks[destinationTrack].getStep(destinationStep);
+
+        StepState before = destination.copy();
+        destination.setActive(source.isActive());
+        destination.setPitch(source.getPitch());
+        destination.setVelocity(source.getVelocity());
+        destination.setGateLength(source.getGateLength());
+        destination.setProbability(source.getProbability());
+        destination.setChordVoicing(source.getChordVoicing());
+        destination.setScaleDegreeOffset(source.getScaleDegreeOffset());
+        destination.setRatchetCount(source.getRatchetCount());
+        destination.setRatchetDecay(source.getRatchetDecay());
+        destination.setStepCondition(source.getStepCondition());
+
+        if (sameStep(before, destination)) {
+            return StateDiff.builder().build();
+        }
+        return StateDiff.builder().addStepChange(destinationTrack, destinationStep).build();
+    }
+
     // -------------------------------------------------------------------
     // Track-level mutations
     // -------------------------------------------------------------------
@@ -277,6 +305,41 @@ public final class SequencerState {
         return b.build();
     }
 
+    /**
+     * Copies the full current sequence from source track to destination track:
+     * all 8 steps, loop end point and step duration.
+     */
+    public StateDiff copyTrackSequence(int sourceTrack, int destinationTrack) {
+        TrackState source = tracks[sourceTrack];
+        TrackState destination = tracks[destinationTrack];
+
+        destination.setStepDuration(source.getStepDuration());
+        destination.setLoopEndPoint(source.getLoopEndPoint());
+
+        StateDiff.Builder builder = StateDiff.builder();
+        for (int step = 0; step < TrackState.STEP_COUNT; step++) {
+            StepState sourceStep = source.getStep(step);
+            StepState destinationStep = destination.getStep(step);
+            StepState before = destinationStep.copy();
+
+            destinationStep.setActive(sourceStep.isActive());
+            destinationStep.setPitch(sourceStep.getPitch());
+            destinationStep.setVelocity(sourceStep.getVelocity());
+            destinationStep.setGateLength(sourceStep.getGateLength());
+            destinationStep.setProbability(sourceStep.getProbability());
+            destinationStep.setChordVoicing(sourceStep.getChordVoicing());
+            destinationStep.setScaleDegreeOffset(sourceStep.getScaleDegreeOffset());
+            destinationStep.setRatchetCount(sourceStep.getRatchetCount());
+            destinationStep.setRatchetDecay(sourceStep.getRatchetDecay());
+            destinationStep.setStepCondition(sourceStep.getStepCondition());
+
+            if (!sameStep(before, destinationStep)) {
+                builder.addStepChange(destinationTrack, step);
+            }
+        }
+        return builder.build();
+    }
+
     // -------------------------------------------------------------------
     // Global mutations
     // -------------------------------------------------------------------
@@ -293,5 +356,18 @@ public final class SequencerState {
         if (focusedTrack == trackIndex) return StateDiff.builder().build();
         focusedTrack = trackIndex;
         return StateDiff.builder().build();
+    }
+
+    private static boolean sameStep(StepState a, StepState b) {
+        return a.isActive() == b.isActive()
+                && a.getPitch() == b.getPitch()
+                && a.getVelocity() == b.getVelocity()
+                && Double.compare(a.getGateLength(), b.getGateLength()) == 0
+                && Double.compare(a.getProbability(), b.getProbability()) == 0
+                && a.getChordVoicing() == b.getChordVoicing()
+                && a.getScaleDegreeOffset() == b.getScaleDegreeOffset()
+                && a.getRatchetCount() == b.getRatchetCount()
+                && Double.compare(a.getRatchetDecay(), b.getRatchetDecay()) == 0
+                && a.getStepCondition() == b.getStepCondition();
     }
 }

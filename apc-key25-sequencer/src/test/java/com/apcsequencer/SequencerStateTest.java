@@ -394,6 +394,63 @@ class SequencerStateTest {
         assertFalse(state.getTrack(0).isSlotPopulated(0));
     }
 
+    @Test
+    void copy_step_copies_all_step_parameters_to_destination_step() {
+        SequencerState state = new SequencerState();
+        state.setStepActive(1, 2, true);
+        state.setStepPitch(1, 2, 67);
+        state.setStepVelocity(1, 2, 83);
+        state.setStepGateLength(1, 2, 0.74);
+        state.setStepProbability(1, 2, 0.66);
+        state.setStepChordVoicing(1, 2, ChordVoicing.DOM7);
+        state.setStepScaleDegreeOffset(1, 2, -3);
+        state.setStepRatchetCount(1, 2, 4);
+        state.setStepRatchetDecay(1, 2, 0.25);
+        state.setStepCondition(1, 2, StepCondition.EVERY_4TH);
+
+        state.copyStep(1, 2, 3, 6);
+
+        StepState destination = state.getStep(3, 6);
+        assertTrue(destination.isActive());
+        assertEquals(67, destination.getPitch());
+        assertEquals(83, destination.getVelocity());
+        assertEquals(0.74, destination.getGateLength(), 1e-9);
+        assertEquals(0.66, destination.getProbability(), 1e-9);
+        assertEquals(ChordVoicing.DOM7, destination.getChordVoicing());
+        assertEquals(-3, destination.getScaleDegreeOffset());
+        assertEquals(4, destination.getRatchetCount());
+        assertEquals(0.25, destination.getRatchetDecay(), 1e-9);
+        assertEquals(StepCondition.EVERY_4TH, destination.getStepCondition());
+    }
+
+    @Test
+    void copy_track_sequence_clones_steps_loop_end_point_and_step_duration() {
+        SequencerState state = new SequencerState();
+        state.setLoopEndPoint(0, 5);
+        state.setStepDuration(0, StepDuration.S8);
+        state.setStepActive(0, 0, true);
+        state.setStepPitch(0, 0, 69);
+        state.setStepVelocity(0, 0, 95);
+        state.setStepChordVoicing(0, 0, ChordVoicing.MAJ7);
+        state.setStepCondition(0, 0, StepCondition.EVERY_2ND);
+        state.setStepActive(0, 4, true);
+        state.setStepPitch(0, 4, 57);
+        state.setStepVelocity(0, 4, 77);
+
+        state.copyTrackSequence(0, 2);
+
+        assertEquals(5, state.getTrack(2).getLoopEndPoint());
+        assertEquals(StepDuration.S8, state.getTrack(2).getStepDuration());
+        assertTrue(state.getStep(2, 0).isActive());
+        assertEquals(69, state.getStep(2, 0).getPitch());
+        assertEquals(95, state.getStep(2, 0).getVelocity());
+        assertEquals(ChordVoicing.MAJ7, state.getStep(2, 0).getChordVoicing());
+        assertEquals(StepCondition.EVERY_2ND, state.getStep(2, 0).getStepCondition());
+        assertTrue(state.getStep(2, 4).isActive());
+        assertEquals(57, state.getStep(2, 4).getPitch());
+        assertEquals(77, state.getStep(2, 4).getVelocity());
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
