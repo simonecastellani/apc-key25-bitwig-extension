@@ -127,6 +127,47 @@ public final class SequencerState {
     }
 
     /**
+     * Resets one step to Clear mode defaults.
+     *
+     * <p>Defaults for Clear mode differ from fresh state defaults for gate length:
+     * clear resets gate length to 100% (1.0).</p>
+     */
+    public StateDiff clearStep(int trackIndex, int stepIndex) {
+        StepState step = tracks[trackIndex].getStep(stepIndex);
+        StepState before = step.copy();
+
+        step.setActive(false);
+        step.setPitch(60);
+        step.setVelocity(100);
+        step.setGateLength(1.0);
+        step.setProbability(1.0);
+        step.setChordVoicing(ChordVoicing.ROOT_ONLY);
+        step.setScaleDegreeOffset(0);
+        step.setRatchetCount(1);
+        step.setRatchetDecay(0.0);
+        step.setStepCondition(StepCondition.ALWAYS);
+
+        if (sameStep(before, step)) {
+            return StateDiff.builder().build();
+        }
+        return StateDiff.builder().addStepChange(trackIndex, stepIndex).build();
+    }
+
+    /**
+     * Resets all 8 steps of one track to Clear mode defaults.
+     */
+    public StateDiff clearTrackSteps(int trackIndex) {
+        StateDiff.Builder builder = StateDiff.builder();
+        for (int step = 0; step < TrackState.STEP_COUNT; step++) {
+            StateDiff diff = clearStep(trackIndex, step);
+            if (!diff.isEmpty()) {
+                builder.addStepChange(trackIndex, step);
+            }
+        }
+        return builder.build();
+    }
+
+    /**
      * Copies all step parameters from one step to another.
      */
     public StateDiff copyStep(int sourceTrack,

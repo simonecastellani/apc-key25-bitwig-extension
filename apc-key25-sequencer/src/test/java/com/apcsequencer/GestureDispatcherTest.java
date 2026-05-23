@@ -1008,4 +1008,89 @@ class GestureDispatcherTest {
 
         verify(midiOut).sendMidi(0x90, 0x52 + 3, LedRenderer.YELLOW_BLINK);
     }
+
+    @Test
+    void clear_pad_gesture_resets_step_to_clear_defaults_and_rewrites_inactive() {
+        SequencerState state = new SequencerState();
+        state.setStepActive(1, 2, true);
+        state.setStepPitch(1, 2, 72);
+        state.setStepVelocity(1, 2, 81);
+        state.setStepGateLength(1, 2, 0.64);
+        state.setStepProbability(1, 2, 0.37);
+        state.setStepChordVoicing(1, 2, ChordVoicing.MAJ7);
+        state.setStepScaleDegreeOffset(1, 2, -2);
+        state.setStepRatchetCount(1, 2, 5);
+        state.setStepRatchetDecay(1, 2, 0.2);
+        state.setStepCondition(1, 2, StepCondition.EVERY_4TH);
+
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new SetClearOverlayGesture(true));
+        dispatcher.dispatch(new ClearPadGesture(1, 2));
+
+        StepState cleared = state.getStep(1, 2);
+        assertFalse(cleared.isActive());
+        assertEquals(60, cleared.getPitch());
+        assertEquals(100, cleared.getVelocity());
+        assertEquals(1.0, cleared.getGateLength(), 1e-9);
+        assertEquals(1.0, cleared.getProbability(), 1e-9);
+        assertEquals(ChordVoicing.ROOT_ONLY, cleared.getChordVoicing());
+        assertEquals(0, cleared.getScaleDegreeOffset());
+        assertEquals(1, cleared.getRatchetCount());
+        assertEquals(0.0, cleared.getRatchetDecay(), 1e-9);
+        assertEquals(StepCondition.ALWAYS, cleared.getStepCondition());
+
+        verify(clipWriter).writeStep(eq(1), eq(2), eq(false), any(StepState.class));
+    }
+
+    @Test
+    void clear_track_gesture_resets_all_track_steps_to_defaults_and_rewrites_all_inactive() {
+        SequencerState state = new SequencerState();
+        for (int step = 0; step < TrackState.STEP_COUNT; step++) {
+            state.setStepActive(4, step, true);
+            state.setStepPitch(4, step, 65 + step);
+            state.setStepVelocity(4, step, 70 + step);
+            state.setStepGateLength(4, step, 0.2 + (step * 0.05));
+            state.setStepChordVoicing(4, step, ChordVoicing.MAJ7);
+        }
+
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new SetClearOverlayGesture(true));
+        dispatcher.dispatch(new ClearTrackGesture(4));
+
+        for (int step = 0; step < TrackState.STEP_COUNT; step++) {
+            StepState cleared = state.getStep(4, step);
+            assertFalse(cleared.isActive());
+            assertEquals(60, cleared.getPitch());
+            assertEquals(100, cleared.getVelocity());
+            assertEquals(1.0, cleared.getGateLength(), 1e-9);
+            assertEquals(ChordVoicing.ROOT_ONLY, cleared.getChordVoicing());
+        }
+        verify(clipWriter, times(TrackState.STEP_COUNT)).writeStep(eq(4), anyInt(), eq(false), any(StepState.class));
+    }
+
+    @Test
+    void clear_overlay_blocks_step_toggle_until_clear_overlay_is_exited() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new SetClearOverlayGesture(true));
+        dispatcher.dispatch(new StepToggleGesture(0, 0));
+
+        assertFalse(state.getStep(0, 0).isActive());
+        verify(clipWriter, never()).writeStep(anyInt(), anyInt(), anyBoolean(), any(StepState.class));
+
+        dispatcher.dispatch(new SetClearOverlayGesture(false));
+        dispatcher.dispatch(new StepToggleGesture(0, 0));
+
+        assertTrue(state.getStep(0, 0).isActive());
+        verify(clipWriter).writeStep(eq(0), eq(0), eq(true), any(StepState.class));
+    }
 }

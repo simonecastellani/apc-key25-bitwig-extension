@@ -616,4 +616,52 @@ class InputModifierTrackerTest {
         assertInstanceOf(CopyTrackGesture.class, g);
         assertEquals(2, ((CopyTrackGesture) g).track());
     }
+
+    @Test
+    void shift_plus_sustain_press_enters_clear_mode() {
+        InputModifierTracker tracker = new InputModifierTracker();
+        tracker.handleButton(new ButtonEvent(ButtonId.SHIFT, true));
+
+        Gesture g = tracker.handleButton(new ButtonEvent(ButtonId.SUSTAIN, true));
+
+        assertInstanceOf(SetClearOverlayGesture.class, g);
+        assertTrue(((SetClearOverlayGesture) g).active());
+    }
+
+    @Test
+    void shift_release_while_clear_mode_active_exits_clear_mode() {
+        InputModifierTracker tracker = new InputModifierTracker();
+        tracker.handleButton(new ButtonEvent(ButtonId.SHIFT, true));
+        tracker.handleButton(new ButtonEvent(ButtonId.SUSTAIN, true));
+
+        Gesture g = tracker.handleButton(new ButtonEvent(ButtonId.SHIFT, false));
+
+        assertInstanceOf(SetClearOverlayGesture.class, g);
+        assertFalse(((SetClearOverlayGesture) g).active());
+    }
+
+    @Test
+    void pad_press_while_clear_mode_active_emits_clear_pad_gesture() {
+        InputModifierTracker tracker = new InputModifierTracker();
+        tracker.handleButton(new ButtonEvent(ButtonId.SHIFT, true));
+        tracker.handleButton(new ButtonEvent(ButtonId.SUSTAIN, true));
+
+        Gesture g = tracker.handlePad(new PadEvent(2, 4, true));
+
+        assertInstanceOf(ClearPadGesture.class, g);
+        assertEquals(2, ((ClearPadGesture) g).track());
+        assertEquals(4, ((ClearPadGesture) g).step());
+    }
+
+    @Test
+    void scene_launch_press_while_clear_mode_active_emits_clear_track_gesture() {
+        InputModifierTracker tracker = new InputModifierTracker();
+        tracker.handleButton(new ButtonEvent(ButtonId.SHIFT, true));
+        tracker.handleButton(new ButtonEvent(ButtonId.SUSTAIN, true));
+
+        Gesture g = tracker.handleButton(new ButtonEvent(ButtonId.SCENE_LAUNCH_3, true));
+
+        assertInstanceOf(ClearTrackGesture.class, g);
+        assertEquals(3, ((ClearTrackGesture) g).track());
+    }
 }
