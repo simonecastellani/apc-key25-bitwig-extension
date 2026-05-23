@@ -114,6 +114,27 @@ public interface ClipWriter {
     void toggleTrackClipPlayback(int track, int slot);
 
     /**
+     * Ensures destination Sequence Slot has clip content by copying from source
+     * when destination is empty.
+     */
+    void copySlotIfEmpty(int track, int sourceSlot, int destinationSlot);
+
+    /**
+     * Launches the given Sequence Slot for the track.
+     */
+    void launchSlot(int track, int slot);
+
+    /**
+     * Clears clip content in the given Sequence Slot.
+     */
+    void clearSlot(int track, int slot);
+
+    /**
+     * Returns true when the given Sequence Slot currently has clip content.
+     */
+    boolean isSlotPopulated(int track, int slot);
+
+    /**
      * Stops clip launcher playback for all sequencer tracks.
      */
     void stopAllTrackClips();

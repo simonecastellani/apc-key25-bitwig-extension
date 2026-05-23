@@ -200,4 +200,17 @@ class LedRendererTest {
         assertEquals(LedRenderer.GREEN, leds[2][0]);
         assertEquals(LedRenderer.YELLOW, leds[2][1]);
     }
+
+    @Test
+    void sequence_bank_overlay_shows_active_slot_yellow_and_populated_slot_green() {
+        SequencerState state = new SequencerState();
+        state.toggleStep(0, 2);
+        state.switchSlot(0, 3);
+
+        int[][] leds = LedRenderer.renderSequenceBank(state);
+
+        assertEquals(LedRenderer.GREEN, leds[0][0]);
+        assertEquals(LedRenderer.YELLOW, leds[0][3]);
+        assertEquals(LedRenderer.OFF, leds[0][1]);
+    }
 }

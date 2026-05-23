@@ -301,6 +301,45 @@ public final class BitwigClipWriter implements ClipWriter {
     }
 
     @Override
+    public void copySlotIfEmpty(int track, int sourceSlot, int destinationSlot) {
+        if (sourceSlot == destinationSlot) {
+            return;
+        }
+        if (!isSlotPopulated(track, destinationSlot)) {
+            slotBanks[track].getItemAt(sourceSlot).duplicateClip();
+        }
+    }
+
+    @Override
+    public void launchSlot(int track, int slot) {
+        slotBanks[track].launch(slot);
+    }
+
+    @Override
+    public void clearSlot(int track, int slot) {
+        slotBanks[track].getItemAt(slot).deleteObject();
+        slotPlaying[track][slot] = false;
+        boolean anyPlaying = false;
+        for (int i = 0; i < TrackState.SLOT_COUNT; i++) {
+            if (slotPlaying[track][i]) {
+                anyPlaying = true;
+                break;
+            }
+        }
+        if (trackPlaying[track] != anyPlaying) {
+            trackPlaying[track] = anyPlaying;
+            if (playbackStateListener != null) {
+                playbackStateListener.onTrackPlayingChanged(track, anyPlaying);
+            }
+        }
+    }
+
+    @Override
+    public boolean isSlotPopulated(int track, int slot) {
+        return slotBanks[track].getItemAt(slot).hasContent().get();
+    }
+
+    @Override
     public void stopAllTrackClips() {
         for (int t = 0; t < SequencerState.TRACK_COUNT; t++) {
             slotBanks[t].stop();

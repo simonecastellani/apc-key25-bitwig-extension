@@ -119,8 +119,10 @@ public final class TrackState {
      * </ol>
      */
     void switchSlot(int slotIndex) {
-        // Always persist the current live state to the current slot before moving away.
-        bank[activeSlot] = snapshotSteps();
+        // Persist current live state when it has meaningful content or when slot already exists.
+        if (bank[activeSlot] != null || hasAnyStepData()) {
+            bank[activeSlot] = snapshotSteps();
+        }
 
         if (bank[slotIndex] == null) {
             // Empty destination — copy current slot's content so the performer has a base
@@ -133,6 +135,16 @@ public final class TrackState {
         activeSlot = slotIndex;
     }
 
+    /** Clears a Sequence Slot. If active, live steps reset to defaults. */
+    void clearSlot(int slotIndex) {
+        bank[slotIndex] = null;
+        if (slotIndex == activeSlot) {
+            for (int i = 0; i < STEP_COUNT; i++) {
+                steps[i] = new StepState();
+            }
+        }
+    }
+
     // -------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------
@@ -143,6 +155,27 @@ public final class TrackState {
             snapshot[i] = steps[i].copy();
         }
         return snapshot;
+    }
+
+    private boolean hasAnyStepData() {
+        for (int i = 0; i < STEP_COUNT; i++) {
+            StepState step = steps[i];
+            if (step.isActive()) {
+                return true;
+            }
+            if (step.getPitch() != 60
+                    || step.getVelocity() != 100
+                    || Double.compare(step.getGateLength(), 0.5) != 0
+                    || Double.compare(step.getProbability(), 1.0) != 0
+                    || step.getChordVoicing() != ChordVoicing.ROOT_ONLY
+                    || step.getScaleDegreeOffset() != 0
+                    || step.getRatchetCount() != 1
+                    || Double.compare(step.getRatchetDecay(), 0.0) != 0
+                    || step.getStepCondition() != StepCondition.ALWAYS) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void restoreSteps(StepState[] snapshot) {

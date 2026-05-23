@@ -94,6 +94,23 @@ class GestureDispatcherTest {
         }
 
         @Override
+        public void copySlotIfEmpty(int track, int sourceSlot, int destinationSlot) {
+        }
+
+        @Override
+        public void launchSlot(int track, int slot) {
+        }
+
+        @Override
+        public void clearSlot(int track, int slot) {
+        }
+
+        @Override
+        public boolean isSlotPopulated(int track, int slot) {
+            return false;
+        }
+
+        @Override
         public void stopAllTrackClips() {
         }
 
@@ -816,5 +833,89 @@ class GestureDispatcherTest {
         dispatcher.dispatch(new LaunchClipGesture(0));
         dispatcher.dispatch(new SendLevelTurnGesture(4, -1));
         verify(clipWriter).adjustFocusedTrackSendLevel(0, 4, -1);
+    }
+
+    @Test
+    void set_sequence_bank_overlay_gesture_toggles_rec_led() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new SetSequenceBankOverlayGesture(true, false));
+
+        verify(midiOut).sendMidi(0x90, 0x5D, LedRenderer.YELLOW);
+
+        reset(midiOut);
+        dispatcher.dispatch(new SetSequenceBankOverlayGesture(false, false));
+        verify(midiOut).sendMidi(0x90, 0x5D, LedRenderer.OFF);
+    }
+
+    @Test
+    void sequence_bank_pad_on_empty_slot_copies_switches_and_launches() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        when(clipWriter.isSlotPopulated(0, 3)).thenReturn(false);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new SetSequenceBankOverlayGesture(true, false));
+        dispatcher.dispatch(new SequenceBankPadGesture(0, 3));
+
+        verify(clipWriter).copySlotIfEmpty(0, 0, 3);
+        verify(clipWriter).launchSlot(0, 3);
+        assertEquals(3, state.getTrack(0).getActiveSlot());
+    }
+
+    @Test
+    void sequence_bank_pad_on_populated_slot_switches_without_copy() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        when(clipWriter.isSlotPopulated(1, 4)).thenReturn(true);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new SetSequenceBankOverlayGesture(true, false));
+        dispatcher.dispatch(new SequenceBankPadGesture(1, 4));
+
+        verify(clipWriter, never()).copySlotIfEmpty(anyInt(), anyInt(), anyInt());
+        verify(clipWriter).launchSlot(1, 4);
+        assertEquals(4, state.getTrack(1).getActiveSlot());
+    }
+
+    @Test
+    void sequence_bank_clear_mode_clears_slot_without_launching() {
+        SequencerState state = new SequencerState();
+        state.switchSlot(2, 5);
+        state.toggleStep(2, 1);
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new SetSequenceBankOverlayGesture(true, true));
+        dispatcher.dispatch(new SequenceBankPadGesture(2, 5));
+
+        verify(clipWriter).clearSlot(2, 5);
+        verify(clipWriter, never()).launchSlot(anyInt(), anyInt());
+    }
+
+    @Test
+    void move_all_tracks_sequence_slot_wraps_and_launches_each_track() {
+        SequencerState state = new SequencerState();
+        state.switchSlot(0, 7);
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        when(clipWriter.isSlotPopulated(anyInt(), anyInt())).thenReturn(true);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new MoveAllTracksSequenceSlotGesture(1));
+
+        assertEquals(0, state.getTrack(0).getActiveSlot());
+        assertEquals(1, state.getTrack(1).getActiveSlot());
+        verify(clipWriter).launchSlot(0, 0);
+        verify(clipWriter).launchSlot(1, 1);
+        verify(clipWriter).launchSlot(2, 1);
+        verify(clipWriter).launchSlot(3, 1);
+        verify(clipWriter).launchSlot(4, 1);
     }
 }

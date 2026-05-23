@@ -20,6 +20,7 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
 
     private static final int SCENE_LAUNCH_NOTE_BASE = 0x52;
     private static final int PLAY_PAUSE_NOTE = 0x5B;
+    private static final int REC_NOTE = 0x5D;
     private static final int VOLUME_NOTE = 0x44;
     private static final int PAN_NOTE = 0x45;
     private static final int SEND_NOTE = 0x46;
@@ -115,6 +116,23 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
             }
             return;
         }
+        if (gesture instanceof SetSequenceBankOverlayGesture g) {
+            if (g.active()) {
+                overlayController.enterSequenceBank(g.clearMode());
+            } else if (overlayController.getMode() == OverlayMode.SEQUENCE_BANK) {
+                overlayController.returnToNormal();
+            }
+            flushLeds();
+            return;
+        }
+        if (gesture instanceof SequenceBankPadGesture g) {
+            handleSequenceBankPad(g);
+            return;
+        }
+        if (gesture instanceof MoveAllTracksSequenceSlotGesture g) {
+            handleMoveAllTracksSequenceSlot(g);
+            return;
+        }
         if (gesture instanceof ScaleSelectionPadGesture g) {
             handleScaleSelectionPad(g);
             return;
@@ -186,9 +204,11 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
      * Forces a full LED refresh.  Useful on init and after slot switches.
      */
     public void flushLeds() {
-        int[][] leds = overlayController.getMode() == OverlayMode.SCALE_SELECTION
-                ? LedRenderer.renderScaleSelection(state)
-                : LedRenderer.render(state, playheads);
+        int[][] leds = switch (overlayController.getMode()) {
+            case SCALE_SELECTION -> LedRenderer.renderScaleSelection(state);
+            case SEQUENCE_BANK -> LedRenderer.renderSequenceBank(state);
+            default -> LedRenderer.render(state, playheads);
+        };
         for (int t = 0; t < SequencerState.TRACK_COUNT; t++) {
             for (int s = 0; s < TrackState.STEP_COUNT; s++) {
                 int padNote  = (4 - t) * 8 + s;   // pad LED MIDI note
@@ -206,6 +226,8 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
         }
 
         midiOut.sendMidi(0x90, PLAY_PAUSE_NOTE, transportPlaying ? LedRenderer.GREEN : LedRenderer.OFF);
+        boolean sequenceBank = overlayController.getMode() == OverlayMode.SEQUENCE_BANK;
+        midiOut.sendMidi(0x90, REC_NOTE, sequenceBank ? LedRenderer.YELLOW : LedRenderer.OFF);
         boolean scaleSelection = overlayController.getMode() == OverlayMode.SCALE_SELECTION;
         midiOut.sendMidi(0x90, VOLUME_NOTE,
                 (volumeHeld || scaleSelection) ? LedRenderer.YELLOW : LedRenderer.OFF);
@@ -231,7 +253,7 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
     // -----------------------------------------------------------------------
 
     private void handleStepToggle(StepToggleGesture g) {
-        if (overlayController.getMode() == OverlayMode.SCALE_SELECTION) {
+        if (overlayController.getMode() != OverlayMode.NORMAL) {
             return;
         }
         StateDiff diff = state.toggleStep(g.track(), g.step());
@@ -248,7 +270,7 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
     }
 
     private void handlePitchAssign(PitchAssignGesture g) {
-        if (overlayController.getMode() == OverlayMode.SCALE_SELECTION) {
+        if (overlayController.getMode() != OverlayMode.NORMAL) {
             return;
         }
         StepState currentStep = state.getStep(g.track(), g.step());
@@ -277,7 +299,7 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
     }
 
     private void handleLaunchClip(LaunchClipGesture g) {
-        if (overlayController.getMode() == OverlayMode.SCALE_SELECTION) {
+        if (overlayController.getMode() != OverlayMode.NORMAL) {
             return;
         }
         int track = g.track();
@@ -286,7 +308,7 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
     }
 
     private void handlePerStepKnobTurn(PerStepKnobTurnGesture g) {
-        if (overlayController.getMode() == OverlayMode.SCALE_SELECTION) {
+        if (overlayController.getMode() != OverlayMode.NORMAL) {
             return;
         }
         StepState step = state.getStep(g.track(), g.step());
@@ -343,7 +365,7 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
     }
 
     private void handleTrackStepDurationTurn(TrackStepDurationTurnGesture g) {
-        if (overlayController.getMode() == OverlayMode.SCALE_SELECTION) {
+        if (overlayController.getMode() != OverlayMode.NORMAL) {
             return;
         }
         TrackState track = state.getTrack(g.track());
@@ -363,7 +385,7 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
     }
 
     private void handleTrackLoopEndPoint(TrackLoopEndPointGesture g) {
-        if (overlayController.getMode() == OverlayMode.SCALE_SELECTION) {
+        if (overlayController.getMode() != OverlayMode.NORMAL) {
             return;
         }
         StateDiff diff = state.setLoopEndPoint(g.track(), g.loopEndPoint());
@@ -375,7 +397,7 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
     }
 
     private void handlePerTrackKnobTurn(PerTrackKnobTurnGesture g) {
-        if (overlayController.getMode() == OverlayMode.SCALE_SELECTION) {
+        if (overlayController.getMode() != OverlayMode.NORMAL) {
             return;
         }
         TrackState track = state.getTrack(g.track());
@@ -466,6 +488,49 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
 
     private static double clampDouble(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private void handleSequenceBankPad(SequenceBankPadGesture g) {
+        if (overlayController.getMode() != OverlayMode.SEQUENCE_BANK) {
+            return;
+        }
+
+        int track = g.track();
+        int slot = g.slot();
+        if (track < 0 || track >= SequencerState.TRACK_COUNT || slot < 0 || slot >= TrackState.SLOT_COUNT) {
+            return;
+        }
+
+        if (overlayController.isSequenceBankClearMode()) {
+            state.clearSlot(track, slot);
+            clipWriter.clearSlot(track, slot);
+            flushLeds();
+            return;
+        }
+
+        int sourceSlot = state.getTrack(track).getActiveSlot();
+        if (!clipWriter.isSlotPopulated(track, slot)) {
+            clipWriter.copySlotIfEmpty(track, sourceSlot, slot);
+        }
+        state.switchSlot(track, slot);
+        clipWriter.launchSlot(track, slot);
+        flushLeds();
+    }
+
+    private void handleMoveAllTracksSequenceSlot(MoveAllTracksSequenceSlotGesture g) {
+        if (g.delta() == 0) {
+            return;
+        }
+        for (int track = 0; track < SequencerState.TRACK_COUNT; track++) {
+            int current = state.getTrack(track).getActiveSlot();
+            int destination = Math.floorMod(current + Integer.signum(g.delta()), TrackState.SLOT_COUNT);
+            if (!clipWriter.isSlotPopulated(track, destination)) {
+                clipWriter.copySlotIfEmpty(track, current, destination);
+            }
+            state.switchSlot(track, destination);
+            clipWriter.launchSlot(track, destination);
+        }
+        flushLeds();
     }
 
 }
