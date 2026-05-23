@@ -26,6 +26,7 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
     private final Application        application;
     private final Transport          transport;
     private final MidiOut            midiOut;
+    private final OverlayController  overlayController = new OverlayController();
 
     /**
      * Playhead positions, one per track (0-based step index; -1 = not playing).
@@ -70,6 +71,26 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
      */
     public void dispatch(Gesture gesture) {
         if (gesture == null) return;
+        if (gesture instanceof ToggleScaleSelectionOverlayGesture) {
+            if (overlayController.getMode() == OverlayMode.SCALE_SELECTION) {
+                overlayController.returnToNormal();
+            } else {
+                overlayController.enterScaleSelection();
+            }
+            flushLeds();
+            return;
+        }
+        if (gesture instanceof DismissScaleSelectionOverlayGesture) {
+            if (overlayController.getMode() == OverlayMode.SCALE_SELECTION) {
+                overlayController.returnToNormal();
+                flushLeds();
+            }
+            return;
+        }
+        if (gesture instanceof ScaleSelectionPadGesture g) {
+            handleScaleSelectionPad(g);
+            return;
+        }
         if (gesture instanceof StepToggleGesture g) {
             handleStepToggle(g);
         } else if (gesture instanceof PitchAssignGesture g) {
@@ -131,7 +152,9 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
      * Forces a full LED refresh.  Useful on init and after slot switches.
      */
     public void flushLeds() {
-        int[][] leds = LedRenderer.render(state, playheads);
+        int[][] leds = overlayController.getMode() == OverlayMode.SCALE_SELECTION
+                ? LedRenderer.renderScaleSelection(state)
+                : LedRenderer.render(state, playheads);
         for (int t = 0; t < SequencerState.TRACK_COUNT; t++) {
             for (int s = 0; s < TrackState.STEP_COUNT; s++) {
                 int padNote  = (4 - t) * 8 + s;   // pad LED MIDI note
@@ -149,6 +172,8 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
         }
 
         midiOut.sendMidi(0x90, PLAY_PAUSE_NOTE, transportPlaying ? LedRenderer.GREEN : LedRenderer.OFF);
+        midiOut.sendMidi(0x90, 0x44,
+                overlayController.getMode() == OverlayMode.SCALE_SELECTION ? LedRenderer.YELLOW : LedRenderer.OFF);
     }
 
     @Override
@@ -168,6 +193,9 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
     // -----------------------------------------------------------------------
 
     private void handleStepToggle(StepToggleGesture g) {
+        if (overlayController.getMode() == OverlayMode.SCALE_SELECTION) {
+            return;
+        }
         StateDiff diff = state.toggleStep(g.track(), g.step());
 
         // Reflect every changed step to Bitwig
@@ -182,6 +210,9 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
     }
 
     private void handlePitchAssign(PitchAssignGesture g) {
+        if (overlayController.getMode() == OverlayMode.SCALE_SELECTION) {
+            return;
+        }
         StepState currentStep = state.getStep(g.track(), g.step());
         int oldPitch = currentStep.getPitch();
         int oldVelocity = currentStep.getVelocity();
@@ -208,12 +239,18 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
     }
 
     private void handleLaunchClip(LaunchClipGesture g) {
+        if (overlayController.getMode() == OverlayMode.SCALE_SELECTION) {
+            return;
+        }
         int track = g.track();
         state.setFocusedTrack(track);
         clipWriter.toggleTrackClipPlayback(track, state.getTrack(track).getActiveSlot());
     }
 
     private void handlePerStepKnobTurn(PerStepKnobTurnGesture g) {
+        if (overlayController.getMode() == OverlayMode.SCALE_SELECTION) {
+            return;
+        }
         StepState step = state.getStep(g.track(), g.step());
         StateDiff diff = switch (g.parameter()) {
             case VELOCITY -> {
@@ -268,6 +305,9 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
     }
 
     private void handleTrackStepDurationTurn(TrackStepDurationTurnGesture g) {
+        if (overlayController.getMode() == OverlayMode.SCALE_SELECTION) {
+            return;
+        }
         TrackState track = state.getTrack(g.track());
         StepDuration[] values = StepDuration.values();
         int direction = Integer.compare(g.delta(), 0);
@@ -285,6 +325,9 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
     }
 
     private void handleTrackLoopEndPoint(TrackLoopEndPointGesture g) {
+        if (overlayController.getMode() == OverlayMode.SCALE_SELECTION) {
+            return;
+        }
         StateDiff diff = state.setLoopEndPoint(g.track(), g.loopEndPoint());
         if (diff.isEmpty()) {
             return;
@@ -294,6 +337,9 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
     }
 
     private void handlePerTrackKnobTurn(PerTrackKnobTurnGesture g) {
+        if (overlayController.getMode() == OverlayMode.SCALE_SELECTION) {
+            return;
+        }
         TrackState track = state.getTrack(g.track());
         StateDiff diff = switch (g.parameter()) {
             case PATTERN_ROTATION -> state.setPatternRotation(g.track(), track.getPatternRotation() + g.delta());
@@ -332,6 +378,33 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
 
     private static int clampInt(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private void handleScaleSelectionPad(ScaleSelectionPadGesture g) {
+        int root = state.getGlobalScale().root();
+        Mode mode = state.getGlobalScale().mode();
+
+        if (g.track() == 0 && g.step() <= 7) {
+            root = g.step();
+        } else if (g.track() == 1 && g.step() <= 7) {
+            mode = switch (g.step()) {
+                case 0 -> Mode.MAJOR;
+                case 1 -> Mode.MINOR;
+                case 2 -> Mode.DORIAN;
+                case 3 -> Mode.PHRYGIAN;
+                case 4 -> Mode.LYDIAN;
+                case 5 -> Mode.MIXOLYDIAN;
+                case 6 -> Mode.LOCRIAN;
+                case 7 -> Mode.PENTATONIC_MAJOR;
+                default -> mode;
+            };
+        } else if (g.track() == 2 && g.step() <= 1) {
+            mode = g.step() == 0 ? Mode.PENTATONIC_MINOR : Mode.CHROMATIC;
+        } else {
+            return;
+        }
+
+        updateGlobalScale(new GlobalScale(root, mode));
     }
 
     private static double clampDouble(double value, double min, double max) {

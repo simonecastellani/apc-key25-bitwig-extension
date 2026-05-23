@@ -176,4 +176,28 @@ class LedRendererTest {
         assertEquals(5, leds.length,    "5 tracks");
         assertEquals(8, leds[0].length, "8 steps per track");
     }
+
+    @Test
+    void scale_selection_overlay_highlights_selected_root_and_mode_in_yellow() {
+        SequencerState state = new SequencerState();
+        state.setGlobalScale(new GlobalScale(3, Mode.DORIAN));
+
+        int[][] leds = LedRenderer.renderScaleSelection(state);
+
+        assertEquals(LedRenderer.YELLOW, leds[0][3]);
+        assertEquals(LedRenderer.GREEN, leds[0][2]);
+        assertEquals(LedRenderer.YELLOW, leds[1][2]);
+        assertEquals(LedRenderer.GREEN, leds[1][1]);
+    }
+
+    @Test
+    void scale_selection_overlay_renders_extra_modes_on_third_row() {
+        SequencerState state = new SequencerState();
+        state.setGlobalScale(new GlobalScale(0, Mode.CHROMATIC));
+
+        int[][] leds = LedRenderer.renderScaleSelection(state);
+
+        assertEquals(LedRenderer.GREEN, leds[2][0]);
+        assertEquals(LedRenderer.YELLOW, leds[2][1]);
+    }
 }

@@ -14,5 +14,7 @@ public sealed interface Gesture
         permits StepToggleGesture, PitchAssignGesture, UndoGesture, RedoGesture,
                 LaunchClipGesture, ToggleTransportGesture, StopAllGesture,
                 PerStepKnobTurnGesture, TrackStepDurationTurnGesture,
-                TrackLoopEndPointGesture, PerTrackKnobTurnGesture {
+                TrackLoopEndPointGesture, PerTrackKnobTurnGesture,
+                ToggleScaleSelectionOverlayGesture, DismissScaleSelectionOverlayGesture,
+                ScaleSelectionPadGesture {
 }
