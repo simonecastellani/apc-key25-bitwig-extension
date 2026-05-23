@@ -93,6 +93,8 @@ class SequencerStateTest {
                 () -> assertEquals(50, track.getSwing(),                       "swing default 50"),
                 () -> assertEquals(0, track.getTranspose(),                    "transpose default 0"),
                 () -> assertEquals(1.0, track.getTrackProbability(), 1e-9,     "trackProbability default 1.0"),
+                () -> assertEquals(0.0, track.getStaticPan(), 1e-9,            "staticPan default 0.0"),
+                () -> assertEquals(0.0, track.getVelocitySpread(), 1e-9,       "velocitySpread default 0.0"),
                 () -> assertEquals(LoopMultiplier.ONE, track.getLoopMultiplier(), "loopMultiplier default ONE"),
                 () -> assertEquals(0, track.getEuclideanDistribution(),         "euclideanDistribution default 0"),
                 () -> assertEquals(0.0, track.getPhaseOffset(), 1e-9,          "phaseOffset default 0.0")
@@ -192,6 +194,28 @@ class SequencerStateTest {
 
         state.setTrackProbability(0, 2.0);
         assertEquals(1.0, state.getTrack(0).getTrackProbability(), 1e-9);
+    }
+
+    @Test
+    void setStaticPan_clamps_to_minus1_plus1_range() {
+        SequencerState state = new SequencerState();
+
+        state.setStaticPan(0, -2.0);
+        assertEquals(-1.0, state.getTrack(0).getStaticPan(), 1e-9);
+
+        state.setStaticPan(0, 2.0);
+        assertEquals(1.0, state.getTrack(0).getStaticPan(), 1e-9);
+    }
+
+    @Test
+    void setVelocitySpread_clamps_to_zero_one_range() {
+        SequencerState state = new SequencerState();
+
+        state.setVelocitySpread(0, -1.0);
+        assertEquals(0.0, state.getTrack(0).getVelocitySpread(), 1e-9);
+
+        state.setVelocitySpread(0, 2.0);
+        assertEquals(1.0, state.getTrack(0).getVelocitySpread(), 1e-9);
     }
 
     @Test

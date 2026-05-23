@@ -392,4 +392,84 @@ class InputModifierTrackerTest {
 
         assertInstanceOf(DismissScaleSelectionOverlayGesture.class, g);
     }
+
+    @Test
+    void volume_press_and_release_emit_volume_hold_gestures() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        Gesture press = tracker.handleButton(new ButtonEvent(ButtonId.VOLUME, true));
+        Gesture release = tracker.handleButton(new ButtonEvent(ButtonId.VOLUME, false));
+
+        assertInstanceOf(SetVolumeHeldGesture.class, press);
+        assertTrue(((SetVolumeHeldGesture) press).held());
+        assertInstanceOf(SetVolumeHeldGesture.class, release);
+        assertFalse(((SetVolumeHeldGesture) release).held());
+    }
+
+    @Test
+    void pan_press_and_release_emit_pan_hold_gestures() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        Gesture press = tracker.handleButton(new ButtonEvent(ButtonId.PAN, true));
+        Gesture release = tracker.handleButton(new ButtonEvent(ButtonId.PAN, false));
+
+        assertInstanceOf(SetPanHeldGesture.class, press);
+        assertTrue(((SetPanHeldGesture) press).held());
+        assertInstanceOf(SetPanHeldGesture.class, release);
+        assertFalse(((SetPanHeldGesture) release).held());
+    }
+
+    @Test
+    void hold_volume_plus_rotate_knob_maps_to_clip_volume_for_track() {
+        InputModifierTracker tracker = new InputModifierTracker();
+        tracker.handleButton(new ButtonEvent(ButtonId.VOLUME, true));
+
+        Gesture g = tracker.handleKnob(new KnobEvent(1, 1));
+
+        assertInstanceOf(PerTrackKnobTurnGesture.class, g);
+        PerTrackKnobTurnGesture turn = (PerTrackKnobTurnGesture) g;
+        assertEquals(1, turn.track());
+        assertEquals(PerTrackParameter.CLIP_VOLUME, turn.parameter());
+        assertEquals(1, turn.delta());
+    }
+
+    @Test
+    void hold_pan_plus_rotate_knob_maps_to_static_pan_for_track() {
+        InputModifierTracker tracker = new InputModifierTracker();
+        tracker.handleButton(new ButtonEvent(ButtonId.PAN, true));
+
+        Gesture g = tracker.handleKnob(new KnobEvent(2, -1));
+
+        assertInstanceOf(PerTrackKnobTurnGesture.class, g);
+        PerTrackKnobTurnGesture turn = (PerTrackKnobTurnGesture) g;
+        assertEquals(2, turn.track());
+        assertEquals(PerTrackParameter.STATIC_PAN, turn.parameter());
+        assertEquals(-1, turn.delta());
+    }
+
+    @Test
+    void shift_plus_pan_plus_rotate_knob_maps_to_velocity_spread_for_track() {
+        InputModifierTracker tracker = new InputModifierTracker();
+        tracker.handleButton(new ButtonEvent(ButtonId.SHIFT, true));
+        tracker.handleButton(new ButtonEvent(ButtonId.PAN, true));
+
+        Gesture g = tracker.handleKnob(new KnobEvent(0, 1));
+
+        assertInstanceOf(PerTrackKnobTurnGesture.class, g);
+        PerTrackKnobTurnGesture turn = (PerTrackKnobTurnGesture) g;
+        assertEquals(0, turn.track());
+        assertEquals(PerTrackParameter.VELOCITY_SPREAD, turn.parameter());
+        assertEquals(1, turn.delta());
+    }
+
+    @Test
+    void hold_volume_plus_scene_launch_emits_toggle_track_mute_gesture() {
+        InputModifierTracker tracker = new InputModifierTracker();
+        tracker.handleButton(new ButtonEvent(ButtonId.VOLUME, true));
+
+        Gesture g = tracker.handleButton(new ButtonEvent(ButtonId.SCENE_LAUNCH_1, true));
+
+        assertInstanceOf(ToggleTrackMuteGesture.class, g);
+        assertEquals(1, ((ToggleTrackMuteGesture) g).track());
+    }
 }

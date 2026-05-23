@@ -15,6 +15,7 @@ public sealed interface Gesture
                 LaunchClipGesture, ToggleTransportGesture, StopAllGesture,
                 PerStepKnobTurnGesture, TrackStepDurationTurnGesture,
                 TrackLoopEndPointGesture, PerTrackKnobTurnGesture,
+                ToggleTrackMuteGesture, SetVolumeHeldGesture, SetPanHeldGesture,
                 ToggleScaleSelectionOverlayGesture, DismissScaleSelectionOverlayGesture,
                 ScaleSelectionPadGesture {
 }

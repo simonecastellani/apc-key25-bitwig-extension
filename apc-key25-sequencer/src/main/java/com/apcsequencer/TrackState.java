@@ -33,6 +33,10 @@ public final class TrackState {
     private int transpose = 0;
     /** Per-track global fire probability (0.0–1.0). Default 1.0. */
     private double trackProbability = 1.0;
+    /** Static pan applied to all notes in this track (-1.0..1.0). Default center. */
+    private double staticPan = 0.0;
+    /** Velocity spread humanisation amount applied to all notes (0.0..1.0). */
+    private double velocitySpread = 0.0;
     /** Loop length multiplier. Default ONE (no multiplication). */
     private LoopMultiplier loopMultiplier = LoopMultiplier.ONE;
     /** Euclidean distribution pulse count (0..loopEndPoint). Default 0. */
@@ -68,6 +72,8 @@ public final class TrackState {
     public int getSwing()                       { return swing; }
     public int getTranspose()                   { return transpose; }
     public double getTrackProbability()         { return trackProbability; }
+    public double getStaticPan()                { return staticPan; }
+    public double getVelocitySpread()           { return velocitySpread; }
     public LoopMultiplier getLoopMultiplier()   { return loopMultiplier; }
     public int getEuclideanDistribution()       { return euclideanDistribution; }
     public double getPhaseOffset()              { return phaseOffset; }
@@ -84,6 +90,8 @@ public final class TrackState {
     void setSwing(int swing)                            { this.swing = swing; }
     void setTranspose(int transpose)                    { this.transpose = transpose; }
     void setTrackProbability(double trackProbability)   { this.trackProbability = trackProbability; }
+    void setStaticPan(double staticPan)                 { this.staticPan = staticPan; }
+    void setVelocitySpread(double velocitySpread)       { this.velocitySpread = velocitySpread; }
     void setLoopMultiplier(LoopMultiplier loopMultiplier) { this.loopMultiplier = loopMultiplier; }
     void setEuclideanDistribution(int euclideanDistribution) { this.euclideanDistribution = euclideanDistribution; }
     void setPhaseOffset(double phaseOffset)             { this.phaseOffset = phaseOffset; }

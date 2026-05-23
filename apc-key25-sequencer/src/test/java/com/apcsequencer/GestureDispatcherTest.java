@@ -66,6 +66,22 @@ class GestureDispatcherTest {
         }
 
         @Override
+        public void adjustTrackClipVolume(int track, int delta) {
+        }
+
+        @Override
+        public void toggleTrackMute(int track) {
+        }
+
+        @Override
+        public void applyTrackStaticPan(int track) {
+        }
+
+        @Override
+        public void applyTrackVelocitySpread(int track) {
+        }
+
+        @Override
         public void toggleTrackClipPlayback(int track, int slot) {
         }
 
@@ -528,6 +544,59 @@ class GestureDispatcherTest {
     }
 
     @Test
+    void per_track_knob_clip_volume_delegates_to_clip_writer() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new PerTrackKnobTurnGesture(1, PerTrackParameter.CLIP_VOLUME, 2));
+
+        verify(clipWriter).adjustTrackClipVolume(1, 2);
+        verify(clipWriter, never()).applyTrackTiming(anyInt());
+    }
+
+    @Test
+    void per_track_knob_static_pan_updates_state_and_applies_notestep_pan() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new PerTrackKnobTurnGesture(2, PerTrackParameter.STATIC_PAN, 5));
+
+        assertEquals(0.05, state.getTrack(2).getStaticPan(), 1e-9);
+        verify(clipWriter).applyTrackStaticPan(2);
+        verify(clipWriter, never()).applyTrackTiming(anyInt());
+    }
+
+    @Test
+    void per_track_knob_velocity_spread_updates_state_and_applies_notestep_spread() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new PerTrackKnobTurnGesture(0, PerTrackParameter.VELOCITY_SPREAD, 4));
+
+        assertEquals(0.04, state.getTrack(0).getVelocitySpread(), 1e-9);
+        verify(clipWriter).applyTrackVelocitySpread(0);
+        verify(clipWriter, never()).applyTrackTiming(anyInt());
+    }
+
+    @Test
+    void toggle_track_mute_gesture_calls_clip_writer_toggle() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new ToggleTrackMuteGesture(3));
+
+        verify(clipWriter).toggleTrackMute(3);
+    }
+
+    @Test
     void per_track_knob_loop_multiplier_cycles_values() {
         SequencerState state = new SequencerState();
         ClipWriter clipWriter = mock(ClipWriter.class);
@@ -645,5 +714,35 @@ class GestureDispatcherTest {
         dispatcher.dispatch(new DismissScaleSelectionOverlayGesture());
 
         verify(midiOut).sendMidi(0x90, 0x44, LedRenderer.OFF);
+    }
+
+    @Test
+    void set_volume_held_gesture_lights_and_clears_volume_led() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new SetVolumeHeldGesture(true));
+        verify(midiOut).sendMidi(0x90, 0x44, LedRenderer.YELLOW);
+
+        reset(midiOut);
+        dispatcher.dispatch(new SetVolumeHeldGesture(false));
+        verify(midiOut).sendMidi(0x90, 0x44, LedRenderer.OFF);
+    }
+
+    @Test
+    void set_pan_held_gesture_lights_and_clears_pan_led() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new SetPanHeldGesture(true));
+        verify(midiOut).sendMidi(0x90, 0x45, LedRenderer.YELLOW);
+
+        reset(midiOut);
+        dispatcher.dispatch(new SetPanHeldGesture(false));
+        verify(midiOut).sendMidi(0x90, 0x45, LedRenderer.OFF);
     }
 }

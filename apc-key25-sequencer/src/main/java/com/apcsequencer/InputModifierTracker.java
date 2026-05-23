@@ -104,10 +104,40 @@ public final class InputModifierTracker {
     public Gesture handleButton(ButtonEvent event) {
         ButtonId id = event.id();
 
-        if (id == ButtonId.VOLUME && event.pressed() && heldModifiers.contains(ButtonId.SHIFT)) {
-            heldModifiers.add(ButtonId.VOLUME);
-            scaleSelectionOverlayActive = !scaleSelectionOverlayActive;
-            return new ToggleScaleSelectionOverlayGesture();
+        if (id == ButtonId.VOLUME) {
+            if (event.pressed() && heldModifiers.contains(ButtonId.SHIFT)) {
+                heldModifiers.add(ButtonId.VOLUME);
+                scaleSelectionOverlayActive = !scaleSelectionOverlayActive;
+                return new ToggleScaleSelectionOverlayGesture();
+            }
+            if (event.pressed()) {
+                heldModifiers.add(ButtonId.VOLUME);
+                if (heldPadTrack >= 0 && heldPadStep >= 0) {
+                    pendingTapToggle = false;
+                }
+            } else {
+                heldModifiers.remove(ButtonId.VOLUME);
+            }
+            return new SetVolumeHeldGesture(event.pressed());
+        }
+
+        if (id == ButtonId.PAN) {
+            if (event.pressed()) {
+                heldModifiers.add(ButtonId.PAN);
+                if (heldPadTrack >= 0 && heldPadStep >= 0) {
+                    pendingTapToggle = false;
+                }
+            } else {
+                heldModifiers.remove(ButtonId.PAN);
+            }
+            return new SetPanHeldGesture(event.pressed());
+        }
+
+        if (event.pressed() && heldModifiers.contains(ButtonId.VOLUME)) {
+            int sceneTrack = sceneLaunchTrack(id);
+            if (sceneTrack >= 0) {
+                return new ToggleTrackMuteGesture(sceneTrack);
+            }
         }
 
         if (event.pressed() && !isAnyModifierHeld()) {
@@ -201,23 +231,40 @@ public final class InputModifierTracker {
             return null;
         }
 
-        if (heldPadTrack < 0 || heldPadStep < 0) return null;
+        if (heldPadTrack >= 0 && heldPadStep >= 0) {
+            PerStepParameter parameter = switch (event.knob()) {
+                case 0 -> PerStepParameter.VELOCITY;
+                case 1 -> PerStepParameter.GATE_LENGTH;
+                case 2 -> PerStepParameter.PROBABILITY;
+                case 3 -> PerStepParameter.SCALE_DEGREE_OFFSET;
+                case 4 -> PerStepParameter.CHORD_VOICING;
+                case 5 -> PerStepParameter.RATCHET_COUNT;
+                case 6 -> PerStepParameter.RATCHET_DECAY;
+                case 7 -> PerStepParameter.STEP_CONDITION;
+                default -> null;
+            };
+            if (parameter == null || event.delta() == 0) return null;
 
-        PerStepParameter parameter = switch (event.knob()) {
-            case 0 -> PerStepParameter.VELOCITY;
-            case 1 -> PerStepParameter.GATE_LENGTH;
-            case 2 -> PerStepParameter.PROBABILITY;
-            case 3 -> PerStepParameter.SCALE_DEGREE_OFFSET;
-            case 4 -> PerStepParameter.CHORD_VOICING;
-            case 5 -> PerStepParameter.RATCHET_COUNT;
-            case 6 -> PerStepParameter.RATCHET_DECAY;
-            case 7 -> PerStepParameter.STEP_CONDITION;
-            default -> null;
-        };
-        if (parameter == null || event.delta() == 0) return null;
+            pendingTapToggle = false;
+            return new PerStepKnobTurnGesture(heldPadTrack, heldPadStep, parameter, event.delta());
+        }
 
-        pendingTapToggle = false;
-        return new PerStepKnobTurnGesture(heldPadTrack, heldPadStep, parameter, event.delta());
+        if (event.knob() < 0 || event.knob() >= SequencerState.TRACK_COUNT || event.delta() == 0) {
+            return null;
+        }
+
+        int track = event.knob();
+        if (heldModifiers.contains(ButtonId.SHIFT) && heldModifiers.contains(ButtonId.PAN)) {
+            return new PerTrackKnobTurnGesture(track, PerTrackParameter.VELOCITY_SPREAD, event.delta());
+        }
+        if (heldModifiers.contains(ButtonId.PAN)) {
+            return new PerTrackKnobTurnGesture(track, PerTrackParameter.STATIC_PAN, event.delta());
+        }
+        if (heldModifiers.contains(ButtonId.VOLUME)) {
+            return new PerTrackKnobTurnGesture(track, PerTrackParameter.CLIP_VOLUME, event.delta());
+        }
+
+        return null;
     }
 
     // -----------------------------------------------------------------------
