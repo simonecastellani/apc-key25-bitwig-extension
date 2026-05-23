@@ -188,6 +188,7 @@ public final class InputModifierTracker {
             case 1 -> PerStepParameter.GATE_LENGTH;
             case 2 -> PerStepParameter.PROBABILITY;
             case 3 -> PerStepParameter.SCALE_DEGREE_OFFSET;
+            case 4 -> PerStepParameter.CHORD_VOICING;
             case 5 -> PerStepParameter.RATCHET_COUNT;
             case 6 -> PerStepParameter.RATCHET_DECAY;
             case 7 -> PerStepParameter.STEP_CONDITION;

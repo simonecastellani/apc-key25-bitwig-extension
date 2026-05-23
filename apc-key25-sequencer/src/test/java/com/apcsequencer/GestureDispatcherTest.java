@@ -406,6 +406,24 @@ class GestureDispatcherTest {
     }
 
     @Test
+    void per_step_knob_chord_voicing_cycles_and_rewrites_step() {
+        SequencerState state = new SequencerState();
+        state.toggleStep(0, 2);
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        HostContext hostContext = hostContext();
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new PerStepKnobTurnGesture(0, 2, PerStepParameter.CHORD_VOICING, 1));
+        assertEquals(ChordVoicing.POWER, state.getStep(0, 2).getChordVoicing());
+
+        dispatcher.dispatch(new PerStepKnobTurnGesture(0, 2, PerStepParameter.CHORD_VOICING, -1));
+        assertEquals(ChordVoicing.ROOT_ONLY, state.getStep(0, 2).getChordVoicing());
+
+        verify(clipWriter, times(2)).writeStep(eq(0), eq(2), eq(true), any(StepState.class));
+    }
+
+    @Test
     void update_global_scale_rewrites_all_active_steps() {
         SequencerState state = new SequencerState();
         state.toggleStep(0, 0);

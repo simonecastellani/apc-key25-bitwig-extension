@@ -8,6 +8,7 @@ public enum PerStepParameter {
     GATE_LENGTH,
     PROBABILITY,
     SCALE_DEGREE_OFFSET,
+    CHORD_VOICING,
     RATCHET_COUNT,
     RATCHET_DECAY,
     STEP_CONDITION

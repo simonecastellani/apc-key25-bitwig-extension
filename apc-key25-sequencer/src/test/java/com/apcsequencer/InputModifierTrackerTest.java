@@ -235,11 +235,11 @@ class InputModifierTrackerTest {
     }
 
     @Test
-    void held_pad_plus_unsupported_knob_emits_no_gesture() {
+    void held_pad_plus_zero_delta_knob_emits_no_gesture() {
         InputModifierTracker tracker = new InputModifierTracker();
 
         tracker.handlePad(new PadEvent(0, 1, true));
-        Gesture g = tracker.handleKnob(new KnobEvent(4, 1));
+        Gesture g = tracker.handleKnob(new KnobEvent(4, 0));
 
         assertNull(g);
     }
@@ -256,6 +256,21 @@ class InputModifierTrackerTest {
         assertEquals(1, turn.track());
         assertEquals(2, turn.step());
         assertEquals(PerStepParameter.SCALE_DEGREE_OFFSET, turn.parameter());
+        assertEquals(1, turn.delta());
+    }
+
+    @Test
+    void held_pad_plus_knob5_emits_chord_voicing_gesture() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        tracker.handlePad(new PadEvent(3, 4, true));
+        Gesture g = tracker.handleKnob(new KnobEvent(4, 1));
+
+        assertInstanceOf(PerStepKnobTurnGesture.class, g);
+        PerStepKnobTurnGesture turn = (PerStepKnobTurnGesture) g;
+        assertEquals(3, turn.track());
+        assertEquals(4, turn.step());
+        assertEquals(PerStepParameter.CHORD_VOICING, turn.parameter());
         assertEquals(1, turn.delta());
     }
 

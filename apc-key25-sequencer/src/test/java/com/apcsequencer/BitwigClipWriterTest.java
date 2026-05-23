@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import static org.mockito.ArgumentMatchers.*;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.mockito.Mockito.*;
 
 /**
@@ -410,5 +411,54 @@ class BitwigClipWriterTest {
         verify(clips[0]).setStep(eq(0), eq(5), eq(67), eq(111), anyDouble());
 
         verify(clips[0], never()).setStep(eq(0), eq(2), anyInt(), anyInt(), anyDouble());
+    }
+
+    @Test
+    void active_step_with_major_triad_writes_three_pitches_at_same_step() {
+        StepState step = new StepState();
+        step.setChordVoicing(ChordVoicing.MAJ_TRIAD);
+
+        writer.writeStep(0, 1, true, step);
+
+        verify(clips[0]).setStep(eq(0), eq(1), eq(60), anyInt(), anyDouble());
+        verify(clips[0]).setStep(eq(0), eq(1), eq(64), anyInt(), anyDouble());
+        verify(clips[0]).setStep(eq(0), eq(1), eq(67), anyInt(), anyDouble());
+    }
+
+    @Test
+    void changing_voicing_from_major_triad_to_root_only_clears_extra_pitches() {
+        StepState step = new StepState();
+        step.setChordVoicing(ChordVoicing.MAJ_TRIAD);
+        writer.writeStep(0, 2, true, step);
+
+        clearInvocations(clips[0]);
+        step.setChordVoicing(ChordVoicing.ROOT_ONLY);
+        writer.writeStep(0, 2, true, step);
+
+        verify(clips[0]).clearStep(eq(0), eq(2), eq(64));
+        verify(clips[0]).clearStep(eq(0), eq(2), eq(67));
+        verify(clips[0], never()).clearStep(eq(0), eq(2), eq(60));
+        verify(clips[0]).setStep(eq(0), eq(2), eq(60), anyInt(), anyDouble());
+    }
+
+    @Test
+    void pitch_change_rewrites_chord_pitches_to_new_root() {
+        StepState step = new StepState();
+        step.setChordVoicing(ChordVoicing.MAJ_TRIAD);
+        writer.writeStep(0, 4, true, step);
+
+        clearInvocations(clips[0]);
+        step.setPitch(62);
+        writer.writeStep(0, 4, true, step);
+
+        verify(clips[0]).clearStep(eq(0), eq(4), eq(60));
+        verify(clips[0]).clearStep(eq(0), eq(4), eq(64));
+        verify(clips[0]).clearStep(eq(0), eq(4), eq(67));
+
+        int[] expected = ScaleEngine.chordPitches(state.getGlobalScale(), 62, ChordVoicing.MAJ_TRIAD);
+        assertArrayEquals(new int[]{62, 66, 69}, expected);
+        verify(clips[0]).setStep(eq(0), eq(4), eq(62), anyInt(), anyDouble());
+        verify(clips[0]).setStep(eq(0), eq(4), eq(66), anyInt(), anyDouble());
+        verify(clips[0]).setStep(eq(0), eq(4), eq(69), anyInt(), anyDouble());
     }
 }
