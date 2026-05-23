@@ -142,6 +142,9 @@ public final class SequencerState {
         if (track.getPatternRotation() > maxRotation) {
             track.setPatternRotation(maxRotation);
         }
+        if (track.getEuclideanDistribution() > after) {
+            track.setEuclideanDistribution(after);
+        }
         if (before == after) return StateDiff.builder().build();
         return StateDiff.builder().addStepChange(trackIndex, after - 1).build();
     }
@@ -203,6 +206,30 @@ public final class SequencerState {
         if (Double.compare(track.getPhaseOffset(), clamped) == 0) return StateDiff.builder().build();
         track.setPhaseOffset(clamped);
         return StateDiff.builder().addStepChange(trackIndex, 0).build();
+    }
+
+    public StateDiff setEuclideanDistribution(int trackIndex, int pulses) {
+        TrackState track = tracks[trackIndex];
+        int loopEndPoint = track.getLoopEndPoint();
+        int clamped = Math.max(0, Math.min(loopEndPoint, pulses));
+        track.setEuclideanDistribution(clamped);
+
+        boolean[] bitmask = EuclideanBitmask.generate(clamped, loopEndPoint);
+        StateDiff.Builder builder = StateDiff.builder();
+        for (int step = 0; step < loopEndPoint; step++) {
+            StepState stepState = track.getStep(step);
+            boolean next = bitmask[step];
+            if (stepState.isActive() != next) {
+                stepState.setActive(next);
+                builder.addStepChange(trackIndex, step);
+            }
+        }
+
+        StateDiff diff = builder.build();
+        if (!diff.isEmpty()) {
+            return diff;
+        }
+        return StateDiff.builder().build();
     }
 
     /**

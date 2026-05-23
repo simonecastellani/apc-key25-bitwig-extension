@@ -278,12 +278,22 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
                 int next = Math.floorMod(current + direction, values.length);
                 yield state.setLoopMultiplier(g.track(), values[next]);
             }
+            case EUCLIDEAN_DISTRIBUTION ->
+                    state.setEuclideanDistribution(g.track(), track.getEuclideanDistribution() + g.delta());
             case PHASE_OFFSET -> state.setPhaseOffset(g.track(), track.getPhaseOffset() + (g.delta() * 0.01));
         };
         if (diff.isEmpty()) {
             return;
         }
-        clipWriter.applyTrackTiming(g.track());
+
+        if (g.parameter() == PerTrackParameter.EUCLIDEAN_DISTRIBUTION) {
+            for (StateDiff.StepChange change : diff.stepChanges()) {
+                StepState step = state.getStep(change.trackIndex(), change.stepIndex());
+                clipWriter.writeStep(change.trackIndex(), change.stepIndex(), step.isActive(), step);
+            }
+        } else {
+            clipWriter.applyTrackTiming(g.track());
+        }
         flushLeds();
     }
 

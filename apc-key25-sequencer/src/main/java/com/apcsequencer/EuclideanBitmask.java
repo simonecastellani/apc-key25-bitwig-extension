@@ -61,7 +61,34 @@ public final class EuclideanBitmask {
         int pos = 0;
         for (int[] group : left)  for (int v : group) pattern[pos++] = (v == 1);
         for (int[] group : right) for (int v : group) pattern[pos++] = (v == 1);
-        return pattern;
+        return rotateToSecondPulse(pattern);
+    }
+
+    private static boolean[] rotateToSecondPulse(boolean[] pattern) {
+        int first = -1;
+        int second = -1;
+        for (int i = 0; i < pattern.length; i++) {
+            if (!pattern[i]) {
+                continue;
+            }
+            if (first < 0) {
+                first = i;
+            } else {
+                second = i;
+                break;
+            }
+        }
+
+        int shift = second >= 0 ? second : (first >= 0 ? first : 0);
+        if (shift == 0) {
+            return pattern;
+        }
+
+        boolean[] rotated = new boolean[pattern.length];
+        for (int i = 0; i < pattern.length; i++) {
+            rotated[i] = pattern[(i + shift) % pattern.length];
+        }
+        return rotated;
     }
 
     private static int[] concat(int[] a, int[] b) {

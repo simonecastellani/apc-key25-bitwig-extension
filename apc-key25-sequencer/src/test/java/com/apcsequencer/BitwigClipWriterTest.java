@@ -362,4 +362,27 @@ class BitwigClipWriterTest {
         verify(playStarts[0]).set(1.0);
         verify(shuffleValues[0]).set(true);
     }
+
+    @Test
+    void euclidean_redistribution_rewrites_only_active_flags_and_preserves_step_parameters() {
+        state.setLoopEndPoint(0, 8);
+        state.setStepPitch(0, 2, 74);
+        state.setStepVelocity(0, 2, 22);
+        state.setStepGateLength(0, 2, 0.4);
+
+        state.setStepPitch(0, 5, 67);
+        state.setStepVelocity(0, 5, 111);
+        state.setStepGateLength(0, 5, 0.8);
+
+        state.setEuclideanDistribution(0, 3);
+
+        writer.applyTrackTiming(0);
+
+        verify(clips[0], times(3)).setStep(anyInt(), anyInt(), anyInt(), anyInt(), anyDouble());
+        verify(clips[0]).setStep(eq(0), eq(0), eq(60), eq(100), anyDouble());
+        verify(clips[0]).setStep(eq(0), eq(3), eq(60), eq(100), anyDouble());
+        verify(clips[0]).setStep(eq(0), eq(5), eq(67), eq(111), anyDouble());
+
+        verify(clips[0], never()).setStep(eq(0), eq(2), anyInt(), anyInt(), anyDouble());
+    }
 }

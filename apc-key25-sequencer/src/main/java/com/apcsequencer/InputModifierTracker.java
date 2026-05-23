@@ -170,6 +170,7 @@ public final class InputModifierTracker {
                 case 3 -> PerTrackParameter.TRANSPOSE;
                 case 4 -> PerTrackParameter.TRACK_PROBABILITY;
                 case 5 -> PerTrackParameter.LOOP_MULTIPLIER;
+                case 6 -> PerTrackParameter.EUCLIDEAN_DISTRIBUTION;
                 case 7 -> PerTrackParameter.PHASE_OFFSET;
                 default -> null;
             };
