@@ -239,9 +239,24 @@ class InputModifierTrackerTest {
         InputModifierTracker tracker = new InputModifierTracker();
 
         tracker.handlePad(new PadEvent(0, 1, true));
-        Gesture g = tracker.handleKnob(new KnobEvent(3, 1));
+        Gesture g = tracker.handleKnob(new KnobEvent(4, 1));
 
         assertNull(g);
+    }
+
+    @Test
+    void held_pad_plus_knob4_emits_scale_degree_offset_gesture() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        tracker.handlePad(new PadEvent(1, 2, true));
+        Gesture g = tracker.handleKnob(new KnobEvent(3, 1));
+
+        assertInstanceOf(PerStepKnobTurnGesture.class, g);
+        PerStepKnobTurnGesture turn = (PerStepKnobTurnGesture) g;
+        assertEquals(1, turn.track());
+        assertEquals(2, turn.step());
+        assertEquals(PerStepParameter.SCALE_DEGREE_OFFSET, turn.parameter());
+        assertEquals(1, turn.delta());
     }
 
     @Test

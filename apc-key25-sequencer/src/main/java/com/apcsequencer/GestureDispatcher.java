@@ -108,6 +108,26 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
     }
 
     /**
+     * Updates Global Scale and rewrites all active steps so per-step scale-degree
+     * transpositions are re-resolved against the new scale.
+     */
+    public void updateGlobalScale(GlobalScale scale) {
+        if (scale.equals(state.getGlobalScale())) {
+            return;
+        }
+        state.setGlobalScale(scale);
+        for (int track = 0; track < SequencerState.TRACK_COUNT; track++) {
+            for (int step = 0; step < TrackState.STEP_COUNT; step++) {
+                StepState stepState = state.getStep(track, step);
+                if (stepState.isActive()) {
+                    clipWriter.writeStep(track, step, true, stepState);
+                }
+            }
+        }
+        flushLeds();
+    }
+
+    /**
      * Forces a full LED refresh.  Useful on init and after slot switches.
      */
     public void flushLeds() {
@@ -207,6 +227,10 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
             case PROBABILITY -> {
                 double next = clampDouble(step.getProbability() + (g.delta() * 0.01), 0.0, 1.0);
                 yield state.setStepProbability(g.track(), g.step(), next);
+            }
+            case SCALE_DEGREE_OFFSET -> {
+                int next = clampInt(step.getScaleDegreeOffset() + g.delta(), -7, 7);
+                yield state.setStepScaleDegreeOffset(g.track(), g.step(), next);
             }
             case RATCHET_COUNT -> {
                 int next = clampInt(step.getRatchetCount() + g.delta(), 1, 8);

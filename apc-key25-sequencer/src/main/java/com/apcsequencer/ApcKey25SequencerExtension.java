@@ -3,10 +3,12 @@ package com.apcsequencer;
 import com.bitwig.extension.controller.ControllerExtension;
 import com.bitwig.extension.controller.api.ControllerHost;
 import com.bitwig.extension.controller.api.CursorTrack;
+import com.bitwig.extension.controller.api.DocumentState;
 import com.bitwig.extension.controller.api.MidiIn;
 import com.bitwig.extension.controller.api.MidiOut;
 import com.bitwig.extension.controller.api.NoteInput;
 import com.bitwig.extension.controller.api.PinnableCursorClip;
+import com.bitwig.extension.controller.api.SettableEnumValue;
 import com.bitwig.extension.controller.api.Track;
 import com.bitwig.extension.controller.api.TrackBank;
 
@@ -24,6 +26,14 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
     // Scene Launch buttons 1–5: channel 0, notes 0x52–0x56
     private static final int SCENE_LAUNCH_MIN = 0x52;
     private static final int SCENE_LAUNCH_MAX = 0x56;
+
+    private static final String[] SCALE_ROOT_OPTIONS = {
+            "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
+    };
+    private static final String[] SCALE_MODE_OPTIONS = {
+            "Major", "Minor", "Dorian", "Phrygian", "Lydian",
+            "Mixolydian", "Locrian", "Pentatonic Major", "Pentatonic Minor", "Chromatic"
+    };
 
     // Keep CursorTrack references alive to prevent garbage collection.
     @SuppressWarnings("FieldCanBeLocal")
@@ -183,6 +193,22 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
         InputModifierTracker tracker = new InputModifierTracker();
         new MidiRouter(allIn, tracker, dispatcher);
 
+        DocumentState documentState = host.getDocumentState();
+        SettableEnumValue scaleRootSetting = documentState.getEnumSetting(
+                "Global Scale Root", "Sequencer", SCALE_ROOT_OPTIONS, SCALE_ROOT_OPTIONS[0]);
+        SettableEnumValue scaleModeSetting = documentState.getEnumSetting(
+                "Global Scale Mode", "Sequencer", SCALE_MODE_OPTIONS, SCALE_MODE_OPTIONS[0]);
+
+        Runnable syncGlobalScale = () -> {
+            int root = rootFromName(scaleRootSetting.get());
+            Mode mode = modeFromName(scaleModeSetting.get());
+            dispatcher.updateGlobalScale(new GlobalScale(root, mode));
+        };
+
+        scaleRootSetting.addValueObserver(value -> syncGlobalScale.run());
+        scaleModeSetting.addValueObserver(value -> syncGlobalScale.run());
+        syncGlobalScale.run();
+
         dispatcher.flushLeds();
 
         host.println("APC Key 25 Sequencer init OK - " + SequencerState.TRACK_COUNT + " tracks");
@@ -213,5 +239,30 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
         for (int note = 0x40; note <= 0x62; note++) {
             ledOut.sendMidi(0x90, note, 0);
         }
+    }
+
+    private static int rootFromName(String name) {
+        for (int i = 0; i < SCALE_ROOT_OPTIONS.length; i++) {
+            if (SCALE_ROOT_OPTIONS[i].equals(name)) {
+                return i;
+            }
+        }
+        return 0;
+    }
+
+    private static Mode modeFromName(String name) {
+        return switch (name) {
+            case "Major" -> Mode.MAJOR;
+            case "Minor" -> Mode.MINOR;
+            case "Dorian" -> Mode.DORIAN;
+            case "Phrygian" -> Mode.PHRYGIAN;
+            case "Lydian" -> Mode.LYDIAN;
+            case "Mixolydian" -> Mode.MIXOLYDIAN;
+            case "Locrian" -> Mode.LOCRIAN;
+            case "Pentatonic Major" -> Mode.PENTATONIC_MAJOR;
+            case "Pentatonic Minor" -> Mode.PENTATONIC_MINOR;
+            case "Chromatic" -> Mode.CHROMATIC;
+            default -> Mode.MAJOR;
+        };
     }
 }
