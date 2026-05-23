@@ -9,5 +9,6 @@ public enum PerTrackParameter {
     TRANSPOSE,
     TRACK_PROBABILITY,
     LOOP_MULTIPLIER,
+    EUCLIDEAN_DISTRIBUTION,
     PHASE_OFFSET
 }

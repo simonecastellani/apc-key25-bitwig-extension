@@ -315,12 +315,16 @@ class InputModifierTrackerTest {
     }
 
     @Test
-    void held_scene_launch_plus_knob7_emits_no_gesture() {
+    void held_scene_launch_plus_knob7_emits_euclidean_distribution_gesture() {
         InputModifierTracker tracker = new InputModifierTracker();
 
         tracker.handleButton(new ButtonEvent(ButtonId.SCENE_LAUNCH_0, true));
         Gesture g = tracker.handleKnob(new KnobEvent(6, 1));
 
-        assertNull(g);
+        assertInstanceOf(PerTrackKnobTurnGesture.class, g);
+        PerTrackKnobTurnGesture turn = (PerTrackKnobTurnGesture) g;
+        assertEquals(0, turn.track());
+        assertEquals(PerTrackParameter.EUCLIDEAN_DISTRIBUTION, turn.parameter());
+        assertEquals(1, turn.delta());
     }
 }

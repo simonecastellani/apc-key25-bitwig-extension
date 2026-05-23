@@ -35,6 +35,8 @@ public final class TrackState {
     private double trackProbability = 1.0;
     /** Loop length multiplier. Default ONE (no multiplication). */
     private LoopMultiplier loopMultiplier = LoopMultiplier.ONE;
+    /** Euclidean distribution pulse count (0..loopEndPoint). Default 0. */
+    private int euclideanDistribution = 0;
     /** Phase offset as fraction of loop length (0.0–1.0). Default 0.0. */
     private double phaseOffset = 0.0;
 
@@ -67,6 +69,7 @@ public final class TrackState {
     public int getTranspose()                   { return transpose; }
     public double getTrackProbability()         { return trackProbability; }
     public LoopMultiplier getLoopMultiplier()   { return loopMultiplier; }
+    public int getEuclideanDistribution()       { return euclideanDistribution; }
     public double getPhaseOffset()              { return phaseOffset; }
 
     /** Returns {@code true} if the given slot index has saved content. */
@@ -82,6 +85,7 @@ public final class TrackState {
     void setTranspose(int transpose)                    { this.transpose = transpose; }
     void setTrackProbability(double trackProbability)   { this.trackProbability = trackProbability; }
     void setLoopMultiplier(LoopMultiplier loopMultiplier) { this.loopMultiplier = loopMultiplier; }
+    void setEuclideanDistribution(int euclideanDistribution) { this.euclideanDistribution = euclideanDistribution; }
     void setPhaseOffset(double phaseOffset)             { this.phaseOffset = phaseOffset; }
 
     /**

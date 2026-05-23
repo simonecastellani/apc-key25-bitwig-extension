@@ -94,6 +94,7 @@ class SequencerStateTest {
                 () -> assertEquals(0, track.getTranspose(),                    "transpose default 0"),
                 () -> assertEquals(1.0, track.getTrackProbability(), 1e-9,     "trackProbability default 1.0"),
                 () -> assertEquals(LoopMultiplier.ONE, track.getLoopMultiplier(), "loopMultiplier default ONE"),
+                () -> assertEquals(0, track.getEuclideanDistribution(),         "euclideanDistribution default 0"),
                 () -> assertEquals(0.0, track.getPhaseOffset(), 1e-9,          "phaseOffset default 0.0")
             );
         }
@@ -213,6 +214,18 @@ class SequencerStateTest {
         assertEquals(1.0, state.getTrack(0).getPhaseOffset(), 1e-9);
     }
 
+    @Test
+    void setEuclideanDistribution_clamps_to_zero_loop_end_point_range() {
+        SequencerState state = new SequencerState();
+        state.setLoopEndPoint(0, 5);
+
+        state.setEuclideanDistribution(0, -10);
+        assertEquals(0, state.getTrack(0).getEuclideanDistribution());
+
+        state.setEuclideanDistribution(0, 99);
+        assertEquals(5, state.getTrack(0).getEuclideanDistribution());
+    }
+
     // -------------------------------------------------------------------------
     // Slice 5 — switchSlot to an empty slot copies current content (copy-on-first-select)
     // -------------------------------------------------------------------------
@@ -278,9 +291,8 @@ class SequencerStateTest {
         assertEquals(8, pattern.length, "pattern length should be 8");
         int active = countActive(pattern);
         assertEquals(3, active, "exactly 3 active steps");
-        // canonical Bjorklund 3-in-8: [1,0,0,1,0,0,1,0]
-        assertArrayEquals(new boolean[]{ true,false,false,true,false,false,true,false }, pattern,
-            "3-in-8 should be [1,0,0,1,0,0,1,0]");
+        assertArrayEquals(new boolean[]{ true,false,false,true,false,true,false,false }, pattern,
+            "3-in-8 should be [1,0,0,1,0,1,0,0]");
     }
 
     @Test
@@ -288,9 +300,44 @@ class SequencerStateTest {
         boolean[] pattern = EuclideanBitmask.generate(5, 8);
         assertEquals(8, pattern.length, "pattern length should be 8");
         assertEquals(5, countActive(pattern), "exactly 5 active steps");
-        // canonical Bjorklund 5-in-8: [1,0,1,1,0,1,1,0]
-        assertArrayEquals(new boolean[]{ true,false,true,true,false,true,true,false }, pattern,
-            "5-in-8 should be [1,0,1,1,0,1,1,0]");
+        assertArrayEquals(new boolean[]{ true,true,false,true,true,false,true,false }, pattern,
+            "5-in-8 should be [1,1,0,1,1,0,1,0]");
+    }
+
+    @Test
+    void setEuclideanDistribution_updates_track_step_active_flags_without_overwriting_other_parameters() {
+        SequencerState state = new SequencerState();
+        state.setLoopEndPoint(0, 8);
+
+        state.setStepPitch(0, 2, 72);
+        state.setStepVelocity(0, 2, 34);
+        state.setStepGateLength(0, 2, 0.73);
+
+        state.setStepPitch(0, 5, 55);
+        state.setStepVelocity(0, 5, 120);
+        state.setStepGateLength(0, 5, 0.12);
+
+        StateDiff diff = state.setEuclideanDistribution(0, 3);
+
+        assertFalse(diff.isEmpty(), "redistribution should change active steps");
+        assertEquals(3, state.getTrack(0).getEuclideanDistribution());
+
+        assertTrue(state.getStep(0, 0).isActive());
+        assertTrue(state.getStep(0, 3).isActive());
+        assertTrue(state.getStep(0, 5).isActive());
+        assertFalse(state.getStep(0, 1).isActive());
+        assertFalse(state.getStep(0, 2).isActive());
+        assertFalse(state.getStep(0, 4).isActive());
+        assertFalse(state.getStep(0, 6).isActive());
+        assertFalse(state.getStep(0, 7).isActive());
+
+        assertEquals(72, state.getStep(0, 2).getPitch());
+        assertEquals(34, state.getStep(0, 2).getVelocity());
+        assertEquals(0.73, state.getStep(0, 2).getGateLength(), 1e-9);
+
+        assertEquals(55, state.getStep(0, 5).getPitch());
+        assertEquals(120, state.getStep(0, 5).getVelocity());
+        assertEquals(0.12, state.getStep(0, 5).getGateLength(), 1e-9);
     }
 
     @Test

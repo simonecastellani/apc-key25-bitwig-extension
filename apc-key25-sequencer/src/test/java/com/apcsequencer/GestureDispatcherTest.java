@@ -5,10 +5,13 @@ import com.bitwig.extension.controller.api.ControllerHost;
 import com.bitwig.extension.controller.api.MidiOut;
 import com.bitwig.extension.controller.api.SettableBooleanValue;
 import com.bitwig.extension.controller.api.Transport;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -23,14 +26,88 @@ import static org.mockito.Mockito.when;
 
 class GestureDispatcherTest {
 
+    private static final class ClipWrite {
+        final int track;
+        final int step;
+        final boolean active;
+
+        ClipWrite(int track, int step, boolean active) {
+            this.track = track;
+            this.step = step;
+            this.active = active;
+        }
+    }
+
+    private static final class CapturingClipWriter implements ClipWriter {
+        private final java.util.List<ClipWrite> writes = new java.util.ArrayList<>();
+
+        @Override
+        public void writeStep(int track, int step, boolean active, StepState stepState) {
+            writes.add(new ClipWrite(track, step, active));
+        }
+
+        @Override
+        public void writeStepParameters(int track,
+                                        int step,
+                                        int pitch,
+                                        double velocity,
+                                        double duration,
+                                        double chance,
+                                        int repeatCount,
+                                        double repeatVelocityEnd,
+                                        com.bitwig.extension.controller.api.NoteOccurrence occurrence,
+                                        int recurrenceLength,
+                                        int recurrenceMask) {
+        }
+
+        @Override
+        public void applyTrackTiming(int track) {
+        }
+
+        @Override
+        public void toggleTrackClipPlayback(int track, int slot) {
+        }
+
+        @Override
+        public void stopAllTrackClips() {
+        }
+
+        @Override
+        public boolean isTrackPlaying(int track) {
+            return false;
+        }
+
+        @Override
+        public boolean isTrackMuted(int track) {
+            return false;
+        }
+
+        @Override
+        public void setPlaybackStateListener(PlaybackStateListener listener) {
+        }
+
+        java.util.List<ClipWrite> writes() {
+            return writes;
+        }
+    }
+
     private static final class HostContext {
         final ControllerHost host;
         final Application application;
+        final Transport transport;
 
-        HostContext(ControllerHost host, Application application) {
+        HostContext(ControllerHost host, Application application, Transport transport) {
             this.host = host;
             this.application = application;
+            this.transport = transport;
         }
+    }
+
+    private HostContext hostContext;
+
+    @BeforeEach
+    void setUp() {
+        hostContext = hostContext();
     }
 
     private HostContext hostContext() {
@@ -42,7 +119,7 @@ class GestureDispatcherTest {
         when(host.createTransport()).thenReturn(transport);
         when(transport.isPlaying()).thenReturn(isPlaying);
         when(isPlaying.get()).thenReturn(false);
-        return new HostContext(host, application);
+        return new HostContext(host, application, transport);
     }
 
     @Test
@@ -399,12 +476,42 @@ class GestureDispatcherTest {
         SequencerState state = new SequencerState();
         ClipWriter clipWriter = mock(ClipWriter.class);
         MidiOut midiOut = mock(MidiOut.class);
-        HostContext hostContext = hostContext();
         GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
 
         dispatcher.dispatch(new PerTrackKnobTurnGesture(0, PerTrackParameter.PHASE_OFFSET, 1));
 
         assertEquals(0.01, state.getTrack(0).getPhaseOffset(), 1e-9);
         verify(clipWriter).applyTrackTiming(0);
+    }
+
+    @Test
+    void per_track_knob_euclidean_distribution_updates_active_steps_and_writes_changed_steps_only() {
+        SequencerState state = new SequencerState();
+        CapturingClipWriter clipWriter = new CapturingClipWriter();
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new PerTrackKnobTurnGesture(0, PerTrackParameter.EUCLIDEAN_DISTRIBUTION, 3));
+
+        assertEquals(3, state.getTrack(0).getEuclideanDistribution());
+        assertTrue(state.getStep(0, 0).isActive());
+        assertTrue(state.getStep(0, 3).isActive());
+        assertTrue(state.getStep(0, 5).isActive());
+        assertFalse(state.getStep(0, 1).isActive());
+        assertFalse(state.getStep(0, 2).isActive());
+        assertFalse(state.getStep(0, 4).isActive());
+        assertFalse(state.getStep(0, 6).isActive());
+        assertFalse(state.getStep(0, 7).isActive());
+
+        assertEquals(3, clipWriter.writes().size());
+        assertEquals(0, clipWriter.writes().get(0).track);
+        assertEquals(0, clipWriter.writes().get(0).step);
+        assertTrue(clipWriter.writes().get(0).active);
+        assertEquals(0, clipWriter.writes().get(1).track);
+        assertEquals(3, clipWriter.writes().get(1).step);
+        assertTrue(clipWriter.writes().get(1).active);
+        assertEquals(0, clipWriter.writes().get(2).track);
+        assertEquals(5, clipWriter.writes().get(2).step);
+        assertTrue(clipWriter.writes().get(2).active);
     }
 }
