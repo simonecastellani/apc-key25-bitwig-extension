@@ -82,6 +82,14 @@ class GestureDispatcherTest {
         }
 
         @Override
+        public void adjustFocusedTrackDeviceMacro(int track, int macro, int delta) {
+        }
+
+        @Override
+        public void adjustFocusedTrackSendLevel(int track, int send, int delta) {
+        }
+
+        @Override
         public void toggleTrackClipPlayback(int track, int slot) {
         }
 
@@ -744,5 +752,69 @@ class GestureDispatcherTest {
         reset(midiOut);
         dispatcher.dispatch(new SetPanHeldGesture(false));
         verify(midiOut).sendMidi(0x90, 0x45, LedRenderer.OFF);
+    }
+
+    @Test
+    void set_send_held_gesture_lights_and_clears_send_led() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new SetSendHeldGesture(true));
+        verify(midiOut).sendMidi(0x90, 0x46, LedRenderer.YELLOW);
+
+        reset(midiOut);
+        dispatcher.dispatch(new SetSendHeldGesture(false));
+        verify(midiOut).sendMidi(0x90, 0x46, LedRenderer.OFF);
+    }
+
+    @Test
+    void set_device_held_gesture_lights_and_clears_device_led() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new SetDeviceHeldGesture(true));
+        verify(midiOut).sendMidi(0x90, 0x47, LedRenderer.YELLOW);
+
+        reset(midiOut);
+        dispatcher.dispatch(new SetDeviceHeldGesture(false));
+        verify(midiOut).sendMidi(0x90, 0x47, LedRenderer.OFF);
+    }
+
+    @Test
+    void device_macro_turn_targets_current_focused_track() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new LaunchClipGesture(2));
+        dispatcher.dispatch(new DeviceMacroTurnGesture(0, 1));
+
+        verify(clipWriter).adjustFocusedTrackDeviceMacro(2, 0, 1);
+
+        dispatcher.dispatch(new LaunchClipGesture(3));
+        dispatcher.dispatch(new DeviceMacroTurnGesture(0, -1));
+        verify(clipWriter).adjustFocusedTrackDeviceMacro(3, 0, -1);
+    }
+
+    @Test
+    void send_level_turn_targets_current_focused_track() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new LaunchClipGesture(1));
+        dispatcher.dispatch(new SendLevelTurnGesture(4, 1));
+
+        verify(clipWriter).adjustFocusedTrackSendLevel(1, 4, 1);
+
+        dispatcher.dispatch(new LaunchClipGesture(0));
+        dispatcher.dispatch(new SendLevelTurnGesture(4, -1));
+        verify(clipWriter).adjustFocusedTrackSendLevel(0, 4, -1);
     }
 }

@@ -5,6 +5,7 @@ import com.bitwig.extension.controller.api.NoteStep;
 import com.bitwig.extension.controller.api.Parameter;
 import com.bitwig.extension.controller.api.PinnableCursorClip;
 import com.bitwig.extension.controller.api.SettableBooleanValue;
+import com.bitwig.extension.controller.api.CursorRemoteControlsPage;
 import com.bitwig.extension.controller.api.Track;
 import com.bitwig.extension.controller.api.ClipLauncherSlotBank;
 import java.util.ArrayDeque;
@@ -34,6 +35,8 @@ public final class BitwigClipWriter implements ClipWriter {
     private final ClipLauncherSlotBank[] slotBanks;
     private final SettableBooleanValue[] muteValues;
     private final Parameter[] trackVolumes;
+    private final Parameter[][] trackDeviceMacros;
+    private final Parameter[][] trackSendLevels;
     private final SequencerState       state;
 
     private final boolean[]            ready;
@@ -61,7 +64,11 @@ public final class BitwigClipWriter implements ClipWriter {
      * @param clips one non-null {@link PinnableCursorClip} per track (length == TRACK_COUNT)
      * @param state used to look up per-track {@link StepDuration} for gate-length computation
      */
-    public BitwigClipWriter(PinnableCursorClip[] clips, Track[] tracks, SequencerState state) {
+    public BitwigClipWriter(PinnableCursorClip[] clips,
+                            Track[] tracks,
+                            Parameter[][] trackDeviceMacros,
+                            Parameter[][] trackSendLevels,
+                            SequencerState state) {
         if (clips.length != SequencerState.TRACK_COUNT) {
             throw new IllegalArgumentException(
                     "clips array must have " + SequencerState.TRACK_COUNT + " entries");
@@ -70,10 +77,20 @@ public final class BitwigClipWriter implements ClipWriter {
             throw new IllegalArgumentException(
                     "tracks array must have " + SequencerState.TRACK_COUNT + " entries");
         }
+        if (trackDeviceMacros.length != SequencerState.TRACK_COUNT) {
+            throw new IllegalArgumentException(
+                    "trackDeviceMacros array must have " + SequencerState.TRACK_COUNT + " entries");
+        }
+        if (trackSendLevels.length != SequencerState.TRACK_COUNT) {
+            throw new IllegalArgumentException(
+                    "trackSendLevels array must have " + SequencerState.TRACK_COUNT + " entries");
+        }
         this.clips   = clips;
         this.slotBanks = new ClipLauncherSlotBank[SequencerState.TRACK_COUNT];
         this.muteValues = new SettableBooleanValue[SequencerState.TRACK_COUNT];
         this.trackVolumes = new Parameter[SequencerState.TRACK_COUNT];
+        this.trackDeviceMacros = trackDeviceMacros;
+        this.trackSendLevels = trackSendLevels;
         this.state   = state;
         this.ready   = new boolean[SequencerState.TRACK_COUNT];
         this.pendingTrackTiming = new boolean[SequencerState.TRACK_COUNT];
@@ -241,6 +258,36 @@ public final class BitwigClipWriter implements ClipWriter {
     @Override
     public void applyTrackVelocitySpread(int track) {
         applyPerTrackNoteStepModulation(track, false);
+    }
+
+    @Override
+    public void adjustFocusedTrackDeviceMacro(int track, int macro, int delta) {
+        if (delta == 0) {
+            return;
+        }
+        if (track < 0 || track >= trackDeviceMacros.length) {
+            return;
+        }
+        Parameter[] macros = trackDeviceMacros[track];
+        if (macros == null || macro < 0 || macro >= macros.length || macros[macro] == null) {
+            return;
+        }
+        macros[macro].inc(delta * 0.01);
+    }
+
+    @Override
+    public void adjustFocusedTrackSendLevel(int track, int send, int delta) {
+        if (delta == 0) {
+            return;
+        }
+        if (track < 0 || track >= trackSendLevels.length) {
+            return;
+        }
+        Parameter[] sends = trackSendLevels[track];
+        if (sends == null || send < 0 || send >= sends.length || sends[send] == null) {
+            return;
+        }
+        sends[send].inc(delta * 0.01);
     }
 
     @Override

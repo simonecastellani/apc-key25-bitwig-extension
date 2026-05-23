@@ -22,6 +22,8 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
     private static final int PLAY_PAUSE_NOTE = 0x5B;
     private static final int VOLUME_NOTE = 0x44;
     private static final int PAN_NOTE = 0x45;
+    private static final int SEND_NOTE = 0x46;
+    private static final int DEVICE_NOTE = 0x47;
 
     private final SequencerState     state;
     private final ClipWriter         clipWriter;
@@ -40,6 +42,8 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
     private boolean transportPlaying;
     private boolean volumeHeld;
     private boolean panHeld;
+    private boolean sendHeld;
+    private boolean deviceHeld;
 
     public GestureDispatcher(SequencerState state,
                              ClipWriter clipWriter,
@@ -82,6 +86,16 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
         }
         if (gesture instanceof SetPanHeldGesture g) {
             panHeld = g.held();
+            flushLeds();
+            return;
+        }
+        if (gesture instanceof SetSendHeldGesture g) {
+            sendHeld = g.held();
+            flushLeds();
+            return;
+        }
+        if (gesture instanceof SetDeviceHeldGesture g) {
+            deviceHeld = g.held();
             flushLeds();
             return;
         }
@@ -129,6 +143,10 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
             handleTrackLoopEndPoint(g);
         } else if (gesture instanceof PerTrackKnobTurnGesture g) {
             handlePerTrackKnobTurn(g);
+        } else if (gesture instanceof DeviceMacroTurnGesture g) {
+            clipWriter.adjustFocusedTrackDeviceMacro(state.getFocusedTrack(), g.knob(), g.delta());
+        } else if (gesture instanceof SendLevelTurnGesture g) {
+            clipWriter.adjustFocusedTrackSendLevel(state.getFocusedTrack(), g.knob(), g.delta());
         }
     }
 
@@ -192,6 +210,8 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
         midiOut.sendMidi(0x90, VOLUME_NOTE,
                 (volumeHeld || scaleSelection) ? LedRenderer.YELLOW : LedRenderer.OFF);
         midiOut.sendMidi(0x90, PAN_NOTE, panHeld ? LedRenderer.YELLOW : LedRenderer.OFF);
+        midiOut.sendMidi(0x90, SEND_NOTE, sendHeld ? LedRenderer.YELLOW : LedRenderer.OFF);
+        midiOut.sendMidi(0x90, DEVICE_NOTE, deviceHeld ? LedRenderer.YELLOW : LedRenderer.OFF);
     }
 
     @Override

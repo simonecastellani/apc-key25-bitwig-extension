@@ -91,6 +91,24 @@ public interface ClipWriter {
     void applyTrackVelocitySpread(int track);
 
     /**
+     * Applies a relative increment to the Focused Track instrument macro.
+     *
+     * @param track 0-based focused track index (0-4)
+     * @param macro 0-based macro index (0-7)
+     * @param delta signed relative movement
+     */
+    void adjustFocusedTrackDeviceMacro(int track, int macro, int delta);
+
+    /**
+     * Applies a relative increment to the Focused Track send level.
+     *
+     * @param track 0-based focused track index (0-4)
+     * @param send 0-based send index (0-7)
+     * @param delta signed relative movement
+     */
+    void adjustFocusedTrackSendLevel(int track, int send, int delta);
+
+    /**
      * Toggles play/stop for a track's active Sequence Slot.
      */
     void toggleTrackClipPlayback(int track, int slot);

@@ -38,6 +38,8 @@ class BitwigClipWriterTest {
     private ClipLauncherSlotBank[]            slotBanks;
     private SettableBooleanValue[]            muteValues;
     private Parameter[]                       trackVolumes;
+    private Parameter[][]                     trackDeviceMacros;
+    private Parameter[][]                     trackSendLevels;
     private SettableBeatTimeValue[]           loopLengths;
     private SettableBeatTimeValue[]           playStarts;
     private SettableBooleanValue[]            shuffleValues;
@@ -55,6 +57,8 @@ class BitwigClipWriterTest {
         slotBanks = new ClipLauncherSlotBank[TRACK_COUNT];
         muteValues = new SettableBooleanValue[TRACK_COUNT];
         trackVolumes = new Parameter[TRACK_COUNT];
+        trackDeviceMacros = new Parameter[TRACK_COUNT][TrackState.STEP_COUNT];
+        trackSendLevels = new Parameter[TRACK_COUNT][TrackState.STEP_COUNT];
         loopLengths = new SettableBeatTimeValue[TRACK_COUNT];
         playStarts = new SettableBeatTimeValue[TRACK_COUNT];
         shuffleValues = new SettableBooleanValue[TRACK_COUNT];
@@ -109,9 +113,14 @@ class BitwigClipWriterTest {
             slotBanks[t] = slotBank;
             muteValues[t] = mute;
             trackVolumes[t] = volume;
+
+            for (int i = 0; i < TrackState.STEP_COUNT; i++) {
+                trackDeviceMacros[t][i] = mock(Parameter.class);
+                trackSendLevels[t][i] = mock(Parameter.class);
+            }
         }
 
-        writer = new BitwigClipWriter(clips, tracks, state);
+        writer = new BitwigClipWriter(clips, tracks, trackDeviceMacros, trackSendLevels, state);
 
         // Mark all clips ready (simulate Bitwig reporting exists=true).
         for (int t = 0; t < TRACK_COUNT; t++) {
@@ -205,7 +214,16 @@ class BitwigClipWriterTest {
             freshTracks[t] = track;
         }
 
-        BitwigClipWriter freshWriter = new BitwigClipWriter(freshClips, freshTracks, state);
+        Parameter[][] freshMacros = new Parameter[TRACK_COUNT][TrackState.STEP_COUNT];
+        Parameter[][] freshSends = new Parameter[TRACK_COUNT][TrackState.STEP_COUNT];
+        for (int t = 0; t < TRACK_COUNT; t++) {
+            for (int i = 0; i < TrackState.STEP_COUNT; i++) {
+                freshMacros[t][i] = mock(Parameter.class);
+                freshSends[t][i] = mock(Parameter.class);
+            }
+        }
+
+        BitwigClipWriter freshWriter = new BitwigClipWriter(freshClips, freshTracks, freshMacros, freshSends, state);
 
         // Write to track 2 before that clip is ready.
         freshWriter.writeStep(2, 5, true, new StepState());
@@ -252,7 +270,16 @@ class BitwigClipWriterTest {
             freshTracks[t] = track;
         }
 
-        BitwigClipWriter freshWriter = new BitwigClipWriter(freshClips, freshTracks, state);
+        Parameter[][] freshMacros = new Parameter[TRACK_COUNT][TrackState.STEP_COUNT];
+        Parameter[][] freshSends = new Parameter[TRACK_COUNT][TrackState.STEP_COUNT];
+        for (int t = 0; t < TRACK_COUNT; t++) {
+            for (int i = 0; i < TrackState.STEP_COUNT; i++) {
+                freshMacros[t][i] = mock(Parameter.class);
+                freshSends[t][i] = mock(Parameter.class);
+            }
+        }
+
+        BitwigClipWriter freshWriter = new BitwigClipWriter(freshClips, freshTracks, freshMacros, freshSends, state);
 
         freshWriter.writeStep(1, 2, true, new StepState());
 
@@ -321,6 +348,20 @@ class BitwigClipWriterTest {
         muteCallbacks[1].valueChanged(true);
         writer.toggleTrackMute(1);
         verify(muteValues[1]).set(false);
+    }
+
+    @Test
+    void adjust_focused_track_device_macro_increments_matching_macro_parameter() {
+        writer.adjustFocusedTrackDeviceMacro(2, 4, 3);
+
+        verify(trackDeviceMacros[2][4]).inc(0.03);
+    }
+
+    @Test
+    void adjust_focused_track_send_level_increments_matching_send_parameter() {
+        writer.adjustFocusedTrackSendLevel(1, 6, -2);
+
+        verify(trackSendLevels[1][6]).inc(-0.02);
     }
 
     @Test

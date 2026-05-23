@@ -420,6 +420,32 @@ class InputModifierTrackerTest {
     }
 
     @Test
+    void send_press_and_release_emit_send_hold_gestures() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        Gesture press = tracker.handleButton(new ButtonEvent(ButtonId.SEND, true));
+        Gesture release = tracker.handleButton(new ButtonEvent(ButtonId.SEND, false));
+
+        assertInstanceOf(SetSendHeldGesture.class, press);
+        assertTrue(((SetSendHeldGesture) press).held());
+        assertInstanceOf(SetSendHeldGesture.class, release);
+        assertFalse(((SetSendHeldGesture) release).held());
+    }
+
+    @Test
+    void device_press_and_release_emit_device_hold_gestures() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        Gesture press = tracker.handleButton(new ButtonEvent(ButtonId.DEVICE, true));
+        Gesture release = tracker.handleButton(new ButtonEvent(ButtonId.DEVICE, false));
+
+        assertInstanceOf(SetDeviceHeldGesture.class, press);
+        assertTrue(((SetDeviceHeldGesture) press).held());
+        assertInstanceOf(SetDeviceHeldGesture.class, release);
+        assertFalse(((SetDeviceHeldGesture) release).held());
+    }
+
+    @Test
     void hold_volume_plus_rotate_knob_maps_to_clip_volume_for_track() {
         InputModifierTracker tracker = new InputModifierTracker();
         tracker.handleButton(new ButtonEvent(ButtonId.VOLUME, true));
@@ -460,6 +486,32 @@ class InputModifierTrackerTest {
         assertEquals(0, turn.track());
         assertEquals(PerTrackParameter.VELOCITY_SPREAD, turn.parameter());
         assertEquals(1, turn.delta());
+    }
+
+    @Test
+    void hold_device_plus_rotate_knob_maps_to_device_macro_turn() {
+        InputModifierTracker tracker = new InputModifierTracker();
+        tracker.handleButton(new ButtonEvent(ButtonId.DEVICE, true));
+
+        Gesture g = tracker.handleKnob(new KnobEvent(6, 1));
+
+        assertInstanceOf(DeviceMacroTurnGesture.class, g);
+        DeviceMacroTurnGesture turn = (DeviceMacroTurnGesture) g;
+        assertEquals(6, turn.knob());
+        assertEquals(1, turn.delta());
+    }
+
+    @Test
+    void hold_send_plus_rotate_knob_maps_to_send_level_turn() {
+        InputModifierTracker tracker = new InputModifierTracker();
+        tracker.handleButton(new ButtonEvent(ButtonId.SEND, true));
+
+        Gesture g = tracker.handleKnob(new KnobEvent(7, -1));
+
+        assertInstanceOf(SendLevelTurnGesture.class, g);
+        SendLevelTurnGesture turn = (SendLevelTurnGesture) g;
+        assertEquals(7, turn.knob());
+        assertEquals(-1, turn.delta());
     }
 
     @Test

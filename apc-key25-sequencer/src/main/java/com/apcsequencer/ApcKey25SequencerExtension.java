@@ -2,12 +2,15 @@ package com.apcsequencer;
 
 import com.bitwig.extension.controller.ControllerExtension;
 import com.bitwig.extension.controller.api.ControllerHost;
+import com.bitwig.extension.controller.api.CursorDevice;
 import com.bitwig.extension.controller.api.CursorTrack;
 import com.bitwig.extension.controller.api.DocumentState;
 import com.bitwig.extension.controller.api.MidiIn;
 import com.bitwig.extension.controller.api.MidiOut;
 import com.bitwig.extension.controller.api.NoteInput;
+import com.bitwig.extension.controller.api.Parameter;
 import com.bitwig.extension.controller.api.PinnableCursorClip;
+import com.bitwig.extension.controller.api.SendBank;
 import com.bitwig.extension.controller.api.SettableEnumValue;
 import com.bitwig.extension.controller.api.Track;
 import com.bitwig.extension.controller.api.TrackBank;
@@ -76,6 +79,8 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
         // ----------------------------------------------------------------
         PinnableCursorClip[] clips = new PinnableCursorClip[SequencerState.TRACK_COUNT];
         Track[] tracks = new Track[SequencerState.TRACK_COUNT];
+        Parameter[][] trackDeviceMacros = new Parameter[SequencerState.TRACK_COUNT][TrackState.STEP_COUNT];
+        Parameter[][] trackSendLevels = new Parameter[SequencerState.TRACK_COUNT][TrackState.STEP_COUNT];
         cursors = new CursorTrack[SequencerState.TRACK_COUNT];
         mainTrackBank = host.createMainTrackBank(SequencerState.TRACK_COUNT, 0, 1);
         boolean[] clipCreateRequested = new boolean[SequencerState.TRACK_COUNT];
@@ -87,6 +92,22 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
             final Track bankTrack = mainTrackBank.getItemAt(trackIndex);
             tracks[trackIndex] = bankTrack;
             bankTrack.exists().markInterested();
+
+            CursorDevice cursorDevice = bankTrack.createCursorDevice("seq-primary-device-" + trackIndex);
+            cursorDevice.exists().markInterested();
+            var remoteControls = cursorDevice.createCursorRemoteControlsPage(TrackState.STEP_COUNT);
+
+            SendBank sendBank = bankTrack.sendBank();
+
+            for (int i = 0; i < TrackState.STEP_COUNT; i++) {
+                Parameter macro = remoteControls.getParameter(i);
+                macro.markInterested();
+                trackDeviceMacros[trackIndex][i] = macro;
+
+                Parameter send = sendBank.getItemAt(i);
+                send.markInterested();
+                trackSendLevels[trackIndex][i] = send;
+            }
 
             CursorTrack cursor = host.createCursorTrack(
                     "seq-track-" + t, "Sequencer Track " + t, 0, 1, false);
@@ -182,7 +203,7 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
         // ----------------------------------------------------------------
         // Wire up the domain model and dispatcher.
         // ----------------------------------------------------------------
-        BitwigClipWriter clipWriter = new BitwigClipWriter(clips, tracks, state);
+        BitwigClipWriter clipWriter = new BitwigClipWriter(clips, tracks, trackDeviceMacros, trackSendLevels, state);
         GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, ledOut, host);
 
         for (int t = 0; t < SequencerState.TRACK_COUNT; t++) {
