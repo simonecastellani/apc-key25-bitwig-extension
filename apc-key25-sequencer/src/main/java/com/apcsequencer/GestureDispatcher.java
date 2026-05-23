@@ -86,6 +86,10 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
             clipWriter.stopAllTrackClips();
         } else if (gesture instanceof PerStepKnobTurnGesture g) {
             handlePerStepKnobTurn(g);
+        } else if (gesture instanceof TrackStepDurationTurnGesture g) {
+            handleTrackStepDurationTurn(g);
+        } else if (gesture instanceof TrackLoopEndPointGesture g) {
+            handleTrackLoopEndPoint(g);
         }
     }
 
@@ -225,6 +229,32 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
 
         StepState updated = state.getStep(g.track(), g.step());
         clipWriter.writeStep(g.track(), g.step(), updated.isActive(), updated);
+        flushLeds();
+    }
+
+    private void handleTrackStepDurationTurn(TrackStepDurationTurnGesture g) {
+        TrackState track = state.getTrack(g.track());
+        StepDuration[] values = StepDuration.values();
+        int direction = Integer.compare(g.delta(), 0);
+        if (direction == 0) {
+            return;
+        }
+        int current = track.getStepDuration().ordinal();
+        int next = Math.floorMod(current + direction, values.length);
+        StateDiff diff = state.setStepDuration(g.track(), values[next]);
+        if (diff.isEmpty()) {
+            return;
+        }
+        clipWriter.applyTrackTiming(g.track());
+        flushLeds();
+    }
+
+    private void handleTrackLoopEndPoint(TrackLoopEndPointGesture g) {
+        StateDiff diff = state.setLoopEndPoint(g.track(), g.loopEndPoint());
+        if (diff.isEmpty()) {
+            return;
+        }
+        clipWriter.applyTrackTiming(g.track());
         flushLeds();
     }
 

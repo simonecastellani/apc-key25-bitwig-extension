@@ -70,6 +70,15 @@ public final class InputModifierTracker {
             return releaseGesture;
         }
 
+        int heldSceneTrack = heldSceneLaunchTrack();
+        if (heldSceneTrack >= 0) {
+            if (heldSceneTrack == event.track()) {
+                pendingTapToggle = false;
+                return new TrackLoopEndPointGesture(event.track(), event.step() + 1);
+            }
+            return null;
+        }
+
         // Press
         heldPadTrack = event.track();
         heldPadStep  = event.step();
@@ -149,6 +158,15 @@ public final class InputModifierTracker {
      * map to per-step Parameter Knob gestures.</p>
      */
     public Gesture handleKnob(KnobEvent event) {
+        int heldSceneTrack = heldSceneLaunchTrack();
+        if (heldSceneTrack >= 0) {
+            if (event.knob() == 0 && event.delta() != 0) {
+                pendingTapToggle = false;
+                return new TrackStepDurationTurnGesture(heldSceneTrack, event.delta());
+            }
+            return null;
+        }
+
         if (heldPadTrack < 0 || heldPadStep < 0) return null;
 
         PerStepParameter parameter = switch (event.knob()) {
@@ -188,6 +206,26 @@ public final class InputModifierTracker {
             case SCENE_LAUNCH_3 -> 3;
             case SCENE_LAUNCH_4 -> 4;
             default -> -1;
+        };
+    }
+
+    private int heldSceneLaunchTrack() {
+        for (int track = 0; track < SequencerState.TRACK_COUNT; track++) {
+            if (heldModifiers.contains(sceneLaunchButton(track))) {
+                return track;
+            }
+        }
+        return -1;
+    }
+
+    private static ButtonId sceneLaunchButton(int track) {
+        return switch (track) {
+            case 0 -> ButtonId.SCENE_LAUNCH_0;
+            case 1 -> ButtonId.SCENE_LAUNCH_1;
+            case 2 -> ButtonId.SCENE_LAUNCH_2;
+            case 3 -> ButtonId.SCENE_LAUNCH_3;
+            case 4 -> ButtonId.SCENE_LAUNCH_4;
+            default -> throw new IllegalArgumentException("invalid track: " + track);
         };
     }
 }

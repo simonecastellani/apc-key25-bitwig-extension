@@ -34,6 +34,7 @@ public final class BitwigClipWriter implements ClipWriter {
     private final SequencerState       state;
 
     private final boolean[]            ready;
+    private final boolean[]            pendingTrackTiming;
     private final List<Deque<PendingWrite>> pending;
     private final boolean[] trackPlaying;
     private final boolean[] trackMuted;
@@ -70,6 +71,7 @@ public final class BitwigClipWriter implements ClipWriter {
         this.muteValues = new SettableBooleanValue[SequencerState.TRACK_COUNT];
         this.state   = state;
         this.ready   = new boolean[SequencerState.TRACK_COUNT];
+        this.pendingTrackTiming = new boolean[SequencerState.TRACK_COUNT];
         this.pending = new ArrayList<>(SequencerState.TRACK_COUNT);
         this.trackPlaying = new boolean[SequencerState.TRACK_COUNT];
         this.trackMuted = new boolean[SequencerState.TRACK_COUNT];
@@ -79,6 +81,7 @@ public final class BitwigClipWriter implements ClipWriter {
             ready[t] = false;
             pending.add(new ArrayDeque<>());
             trackPlaying[t] = false;
+            pendingTrackTiming[t] = false;
 
             final int trackIndex = t;
             Track track = tracks[t];
@@ -184,6 +187,22 @@ public final class BitwigClipWriter implements ClipWriter {
     }
 
     @Override
+    public void applyTrackTiming(int track) {
+        PinnableCursorClip clip = clips[track];
+
+        if (!ready[track] && clip.exists().get()) {
+            setTrackReadyAndDrain(track, clip);
+        }
+
+        if (!ready[track]) {
+            pendingTrackTiming[track] = true;
+            return;
+        }
+
+        applyTrackTimingNow(track, clip);
+    }
+
+    @Override
     public void toggleTrackClipPlayback(int track, int slot) {
         ClipLauncherSlotBank slotBank = slotBanks[track];
         if (trackPlaying[track]) {
@@ -264,11 +283,37 @@ public final class BitwigClipWriter implements ClipWriter {
     }
 
     private void setTrackReadyAndDrain(int trackIndex, PinnableCursorClip clip) {
+        ready[trackIndex] = true;
+
         Deque<PendingWrite> dq = pending.get(trackIndex);
         while (!dq.isEmpty()) {
             PendingWrite w = dq.poll();
             applyWrite(trackIndex, clip, w.step, w.active, w.snapshot);
         }
-        ready[trackIndex] = true;
+
+        if (pendingTrackTiming[trackIndex]) {
+            pendingTrackTiming[trackIndex] = false;
+            applyTrackTimingNow(trackIndex, clip);
+        }
+    }
+
+    private void applyTrackTimingNow(int track, PinnableCursorClip clip) {
+        TrackState trackState = state.getTrack(track);
+        double stepBeatTime = trackState.getStepDuration().beatTime();
+        double loopLength = trackState.getLoopEndPoint() * stepBeatTime;
+
+        clip.setStepSize(stepBeatTime);
+        clip.getLoopLength().set(loopLength);
+
+        for (int step = 0; step < TrackState.STEP_COUNT; step++) {
+            clip.clearStepsAtX(0, step);
+        }
+
+        for (int step = 0; step < TrackState.STEP_COUNT; step++) {
+            StepState stepState = trackState.getStep(step);
+            if (stepState.isActive()) {
+                applyWrite(track, clip, step, true, stepState);
+            }
+        }
     }
 }

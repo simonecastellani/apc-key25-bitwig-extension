@@ -96,6 +96,7 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
                 if (exists) {
                     double beatTime = state.getTrack(trackIndex).getStepDuration().beatTime();
                     clip.setStepSize(beatTime);
+                    clip.getLoopLength().set(state.getTrack(trackIndex).getLoopEndPoint() * beatTime);
                 }
             });
 

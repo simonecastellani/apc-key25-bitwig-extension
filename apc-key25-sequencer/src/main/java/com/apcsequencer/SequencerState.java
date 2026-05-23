@@ -138,7 +138,18 @@ public final class SequencerState {
         int before = tracks[trackIndex].getLoopEndPoint();
         int after  = tracks[trackIndex].setLoopEndPoint(value);
         if (before == after) return StateDiff.builder().build();
-        return StateDiff.builder().build(); // track-level change; no step diff needed for now
+        return StateDiff.builder().addStepChange(trackIndex, after - 1).build();
+    }
+
+    /**
+     * Sets Step Duration for the given track.
+     * Returns an empty diff if unchanged.
+     */
+    public StateDiff setStepDuration(int trackIndex, StepDuration stepDuration) {
+        TrackState track = tracks[trackIndex];
+        if (track.getStepDuration() == stepDuration) return StateDiff.builder().build();
+        track.setStepDuration(stepDuration);
+        return StateDiff.builder().addStepChange(trackIndex, 0).build();
     }
 
     /**

@@ -263,4 +263,40 @@ class InputModifierTrackerTest {
 
         assertNull(release);
     }
+
+    @Test
+    void held_scene_launch_plus_knob1_emits_track_step_duration_turn() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        tracker.handleButton(new ButtonEvent(ButtonId.SCENE_LAUNCH_2, true));
+        Gesture g = tracker.handleKnob(new KnobEvent(0, 1));
+
+        assertInstanceOf(TrackStepDurationTurnGesture.class, g);
+        TrackStepDurationTurnGesture turn = (TrackStepDurationTurnGesture) g;
+        assertEquals(2, turn.track());
+        assertEquals(1, turn.delta());
+    }
+
+    @Test
+    void held_scene_launch_plus_pad_same_track_sets_loop_end_point() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        tracker.handleButton(new ButtonEvent(ButtonId.SCENE_LAUNCH_1, true));
+        Gesture g = tracker.handlePad(new PadEvent(1, 4, true));
+
+        assertInstanceOf(TrackLoopEndPointGesture.class, g);
+        TrackLoopEndPointGesture loop = (TrackLoopEndPointGesture) g;
+        assertEquals(1, loop.track());
+        assertEquals(5, loop.loopEndPoint());
+    }
+
+    @Test
+    void held_scene_launch_plus_pad_other_track_emits_no_gesture() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        tracker.handleButton(new ButtonEvent(ButtonId.SCENE_LAUNCH_4, true));
+        Gesture g = tracker.handlePad(new PadEvent(3, 2, true));
+
+        assertNull(g);
+    }
 }

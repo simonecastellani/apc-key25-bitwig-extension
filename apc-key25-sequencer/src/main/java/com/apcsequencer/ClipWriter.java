@@ -59,6 +59,11 @@ public interface ClipWriter {
                              int recurrenceMask);
 
     /**
+     * Applies track timing (Step Duration + Loop End Point) and rewrites all steps.
+     */
+    void applyTrackTiming(int track);
+
+    /**
      * Toggles play/stop for a track's active Sequence Slot.
      */
     void toggleTrackClipPlayback(int track, int slot);
