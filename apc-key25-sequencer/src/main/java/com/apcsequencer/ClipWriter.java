@@ -9,6 +9,12 @@ package com.apcsequencer;
  */
 public interface ClipWriter {
 
+    interface PlaybackStateListener {
+        void onTrackPlayingChanged(int track, boolean playing);
+
+        void onTrackMutedChanged(int track, boolean muted);
+    }
+
     /**
      * Write the current state of a single step to its Bitwig clip.
      *
@@ -22,4 +28,29 @@ public interface ClipWriter {
      * @param stepState full per-step parameters (pitch, velocity, gate length …)
      */
     void writeStep(int track, int step, boolean active, StepState stepState);
+
+    /**
+     * Toggles play/stop for a track's active Sequence Slot.
+     */
+    void toggleTrackClipPlayback(int track, int slot);
+
+    /**
+     * Stops clip launcher playback for all sequencer tracks.
+     */
+    void stopAllTrackClips();
+
+    /**
+     * Returns true when any clip is currently playing on the given track.
+     */
+    boolean isTrackPlaying(int track);
+
+    /**
+     * Returns true when the given track is muted.
+     */
+    boolean isTrackMuted(int track);
+
+    /**
+     * Registers a listener for track playback/mute state changes.
+     */
+    void setPlaybackStateListener(PlaybackStateListener listener);
 }

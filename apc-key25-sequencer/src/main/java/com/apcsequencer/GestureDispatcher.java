@@ -3,6 +3,7 @@ package com.apcsequencer;
 import com.bitwig.extension.controller.api.Application;
 import com.bitwig.extension.controller.api.ControllerHost;
 import com.bitwig.extension.controller.api.MidiOut;
+import com.bitwig.extension.controller.api.Transport;
 
 /**
  * Dispatches high-level {@link Gesture} objects to the appropriate subsystems:
@@ -15,11 +16,15 @@ import com.bitwig.extension.controller.api.MidiOut;
  *
  * <p>All gestures are processed synchronously on Bitwig's controller thread.</p>
  */
-public final class GestureDispatcher {
+public final class GestureDispatcher implements ClipWriter.PlaybackStateListener {
+
+    private static final int SCENE_LAUNCH_NOTE_BASE = 0x52;
+    private static final int PLAY_PAUSE_NOTE = 0x5B;
 
     private final SequencerState     state;
     private final ClipWriter         clipWriter;
     private final Application        application;
+    private final Transport          transport;
     private final MidiOut            midiOut;
 
     /**
@@ -27,6 +32,9 @@ public final class GestureDispatcher {
      * Updated by {@link MidiRouter} via {@link #setPlayhead(int, int)}.
      */
     private final int[] playheads = {-1, -1, -1, -1, -1};
+    private final boolean[] trackPlaying = new boolean[SequencerState.TRACK_COUNT];
+    private final boolean[] trackMuted = new boolean[SequencerState.TRACK_COUNT];
+    private boolean transportPlaying;
 
     public GestureDispatcher(SequencerState state,
                              ClipWriter clipWriter,
@@ -35,7 +43,22 @@ public final class GestureDispatcher {
         this.state      = state;
         this.clipWriter = clipWriter;
         this.application = host.createApplication();
+        this.transport  = host.createTransport();
         this.midiOut    = midiOut;
+
+        this.clipWriter.setPlaybackStateListener(this);
+
+        transport.isPlaying().markInterested();
+        transport.isPlaying().addValueObserver(isPlaying -> {
+            transportPlaying = isPlaying;
+            flushLeds();
+        });
+        transportPlaying = transport.isPlaying().get();
+
+        for (int t = 0; t < SequencerState.TRACK_COUNT; t++) {
+            trackPlaying[t] = clipWriter.isTrackPlaying(t);
+            trackMuted[t] = clipWriter.isTrackMuted(t);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -55,6 +78,12 @@ public final class GestureDispatcher {
             application.undo();
         } else if (gesture instanceof RedoGesture) {
             application.redo();
+        } else if (gesture instanceof LaunchClipGesture g) {
+            handleLaunchClip(g);
+        } else if (gesture instanceof ToggleTransportGesture) {
+            transport.togglePlay();
+        } else if (gesture instanceof StopAllGesture) {
+            clipWriter.stopAllTrackClips();
         }
     }
 
@@ -82,6 +111,28 @@ public final class GestureDispatcher {
                 midiOut.sendMidi(0x90, padNote, velocity);
             }
         }
+
+        for (int track = 0; track < SequencerState.TRACK_COUNT; track++) {
+            int note = SCENE_LAUNCH_NOTE_BASE + track;
+            int velocity = trackPlaying[track]
+                    ? (trackMuted[track] ? LedRenderer.YELLOW : LedRenderer.GREEN)
+                    : LedRenderer.OFF;
+            midiOut.sendMidi(0x90, note, velocity);
+        }
+
+        midiOut.sendMidi(0x90, PLAY_PAUSE_NOTE, transportPlaying ? LedRenderer.GREEN : LedRenderer.OFF);
+    }
+
+    @Override
+    public void onTrackPlayingChanged(int track, boolean playing) {
+        trackPlaying[track] = playing;
+        flushLeds();
+    }
+
+    @Override
+    public void onTrackMutedChanged(int track, boolean muted) {
+        trackMuted[track] = muted;
+        flushLeds();
     }
 
     // -----------------------------------------------------------------------
@@ -126,5 +177,11 @@ public final class GestureDispatcher {
         }
 
         flushLeds();
+    }
+
+    private void handleLaunchClip(LaunchClipGesture g) {
+        int track = g.track();
+        state.setFocusedTrack(track);
+        clipWriter.toggleTrackClipPlayback(track, state.getTrack(track).getActiveSlot());
     }
 }

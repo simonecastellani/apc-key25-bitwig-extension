@@ -1,12 +1,18 @@
 package com.apcsequencer;
 
 import com.bitwig.extension.callback.BooleanValueChangedCallback;
+import com.bitwig.extension.callback.ClipLauncherSlotBankPlaybackStateChangedCallback;
 import com.bitwig.extension.controller.api.BooleanValue;
+import com.bitwig.extension.controller.api.ClipLauncherSlotBank;
 import com.bitwig.extension.controller.api.PinnableCursorClip;
+import com.bitwig.extension.controller.api.SettableBooleanValue;
+import com.bitwig.extension.controller.api.Track;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.mockito.ArgumentMatchers.*;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
 
 /**
@@ -20,7 +26,12 @@ class BitwigClipWriterTest {
     private static final int TRACK_COUNT = SequencerState.TRACK_COUNT; // 5
 
     private PinnableCursorClip[]              clips;
+    private Track[]                           tracks;
     private BooleanValueChangedCallback[]     existsCallbacks;
+    private BooleanValueChangedCallback[]     muteCallbacks;
+    private ClipLauncherSlotBankPlaybackStateChangedCallback[] playbackCallbacks;
+    private ClipLauncherSlotBank[]            slotBanks;
+    private SettableBooleanValue[]            muteValues;
     private SequencerState                    state;
     private BitwigClipWriter                  writer;
 
@@ -28,7 +39,12 @@ class BitwigClipWriterTest {
     void setUp() {
         state  = new SequencerState();
         clips  = new PinnableCursorClip[TRACK_COUNT];
+        tracks = new Track[TRACK_COUNT];
         existsCallbacks = new BooleanValueChangedCallback[TRACK_COUNT];
+        muteCallbacks = new BooleanValueChangedCallback[TRACK_COUNT];
+        playbackCallbacks = new ClipLauncherSlotBankPlaybackStateChangedCallback[TRACK_COUNT];
+        slotBanks = new ClipLauncherSlotBank[TRACK_COUNT];
+        muteValues = new SettableBooleanValue[TRACK_COUNT];
 
         for (int t = 0; t < TRACK_COUNT; t++) {
             PinnableCursorClip clip = mock(PinnableCursorClip.class);
@@ -44,9 +60,31 @@ class BitwigClipWriterTest {
             }).when(existsValue).addValueObserver(any(BooleanValueChangedCallback.class));
 
             clips[t] = clip;
+
+            Track track = mock(Track.class);
+            ClipLauncherSlotBank slotBank = mock(ClipLauncherSlotBank.class);
+            SettableBooleanValue mute = mock(SettableBooleanValue.class);
+            when(track.clipLauncherSlotBank()).thenReturn(slotBank);
+            when(track.mute()).thenReturn(mute);
+            when(mute.get()).thenReturn(false);
+
+            final int idxTrack = t;
+            doAnswer(inv -> {
+                playbackCallbacks[idxTrack] = inv.getArgument(0);
+                return null;
+            }).when(slotBank).addPlaybackStateObserver(any(ClipLauncherSlotBankPlaybackStateChangedCallback.class));
+
+            doAnswer(inv -> {
+                muteCallbacks[idxTrack] = inv.getArgument(0);
+                return null;
+            }).when(mute).addValueObserver(any(BooleanValueChangedCallback.class));
+
+            tracks[t] = track;
+            slotBanks[t] = slotBank;
+            muteValues[t] = mute;
         }
 
-        writer = new BitwigClipWriter(clips, state);
+        writer = new BitwigClipWriter(clips, tracks, state);
 
         // Mark all clips ready (simulate Bitwig reporting exists=true).
         for (int t = 0; t < TRACK_COUNT; t++) {
@@ -123,7 +161,20 @@ class BitwigClipWriterTest {
             freshClips[t] = clip;
         }
 
-        BitwigClipWriter freshWriter = new BitwigClipWriter(freshClips, state);
+        Track[] freshTracks = new Track[TRACK_COUNT];
+        for (int t = 0; t < TRACK_COUNT; t++) {
+            Track track = mock(Track.class);
+            ClipLauncherSlotBank slotBank = mock(ClipLauncherSlotBank.class);
+            SettableBooleanValue mute = mock(SettableBooleanValue.class);
+            when(track.clipLauncherSlotBank()).thenReturn(slotBank);
+            when(track.mute()).thenReturn(mute);
+            when(mute.get()).thenReturn(false);
+            doNothing().when(slotBank).addPlaybackStateObserver(any(ClipLauncherSlotBankPlaybackStateChangedCallback.class));
+            doNothing().when(mute).addValueObserver(any(BooleanValueChangedCallback.class));
+            freshTracks[t] = track;
+        }
+
+        BitwigClipWriter freshWriter = new BitwigClipWriter(freshClips, freshTracks, state);
 
         // Write to track 2 before that clip is ready.
         freshWriter.writeStep(2, 5, true, new StepState());
@@ -153,10 +204,68 @@ class BitwigClipWriterTest {
             freshClips[t] = clip;
         }
 
-        BitwigClipWriter freshWriter = new BitwigClipWriter(freshClips, state);
+        Track[] freshTracks = new Track[TRACK_COUNT];
+        for (int t = 0; t < TRACK_COUNT; t++) {
+            Track track = mock(Track.class);
+            ClipLauncherSlotBank slotBank = mock(ClipLauncherSlotBank.class);
+            SettableBooleanValue mute = mock(SettableBooleanValue.class);
+            when(track.clipLauncherSlotBank()).thenReturn(slotBank);
+            when(track.mute()).thenReturn(mute);
+            when(mute.get()).thenReturn(false);
+            doNothing().when(slotBank).addPlaybackStateObserver(any(ClipLauncherSlotBankPlaybackStateChangedCallback.class));
+            doNothing().when(mute).addValueObserver(any(BooleanValueChangedCallback.class));
+            freshTracks[t] = track;
+        }
+
+        BitwigClipWriter freshWriter = new BitwigClipWriter(freshClips, freshTracks, state);
 
         freshWriter.writeStep(1, 2, true, new StepState());
 
         verify(freshClips[1], times(1)).setStep(anyInt(), eq(2), anyInt(), anyInt(), anyDouble());
+    }
+
+    @Test
+    void toggleTrackClipPlayback_launches_slot_when_track_not_playing() {
+        writer.toggleTrackClipPlayback(1, 3);
+
+        verify(slotBanks[1]).launch(3);
+        verify(slotBanks[1], never()).stop();
+    }
+
+    @Test
+    void toggleTrackClipPlayback_stops_track_when_any_slot_is_playing() {
+        playbackCallbacks[1].playbackStateChanged(4, 1, false);
+
+        writer.toggleTrackClipPlayback(1, 3);
+
+        verify(slotBanks[1]).stop();
+        verify(slotBanks[1], never()).launch(anyInt());
+    }
+
+    @Test
+    void stopAllTrackClips_stops_each_track_slot_bank() {
+        writer.stopAllTrackClips();
+
+        for (int t = 0; t < TRACK_COUNT; t++) {
+            verify(slotBanks[t]).stop();
+        }
+    }
+
+    @Test
+    void playback_state_observer_updates_track_playing_flag() {
+        playbackCallbacks[2].playbackStateChanged(0, 1, false);
+        assertTrue(writer.isTrackPlaying(2));
+
+        playbackCallbacks[2].playbackStateChanged(0, 0, false);
+        assertFalse(writer.isTrackPlaying(2));
+    }
+
+    @Test
+    void mute_observer_updates_track_muted_flag() {
+        muteCallbacks[3].valueChanged(true);
+        assertTrue(writer.isTrackMuted(3));
+
+        muteCallbacks[3].valueChanged(false);
+        assertFalse(writer.isTrackMuted(3));
     }
 }

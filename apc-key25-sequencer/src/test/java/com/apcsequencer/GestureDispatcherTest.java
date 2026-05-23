@@ -3,6 +3,8 @@ package com.apcsequencer;
 import com.bitwig.extension.controller.api.Application;
 import com.bitwig.extension.controller.api.ControllerHost;
 import com.bitwig.extension.controller.api.MidiOut;
+import com.bitwig.extension.controller.api.SettableBooleanValue;
+import com.bitwig.extension.controller.api.Transport;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -11,6 +13,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
@@ -20,20 +23,40 @@ import static org.mockito.Mockito.when;
 
 class GestureDispatcherTest {
 
+    private static final class HostContext {
+        final ControllerHost host;
+        final Application application;
+
+        HostContext(ControllerHost host, Application application) {
+            this.host = host;
+            this.application = application;
+        }
+    }
+
+    private HostContext hostContext() {
+        ControllerHost host = mock(ControllerHost.class);
+        Application application = mock(Application.class);
+        Transport transport = mock(Transport.class);
+        SettableBooleanValue isPlaying = mock(SettableBooleanValue.class);
+        when(host.createApplication()).thenReturn(application);
+        when(host.createTransport()).thenReturn(transport);
+        when(transport.isPlaying()).thenReturn(isPlaying);
+        when(isPlaying.get()).thenReturn(false);
+        return new HostContext(host, application);
+    }
+
     @Test
     void undo_gesture_calls_bitwig_application_undo() {
         SequencerState state = new SequencerState();
         ClipWriter clipWriter = mock(ClipWriter.class);
         MidiOut midiOut = mock(MidiOut.class);
-        ControllerHost host = mock(ControllerHost.class);
-        Application application = mock(Application.class);
-        when(host.createApplication()).thenReturn(application);
+        HostContext hostContext = hostContext();
 
-        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, host);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
 
         dispatcher.dispatch(new UndoGesture());
 
-        verify(application).undo();
+        verify(hostContext.application).undo();
     }
 
     @Test
@@ -41,15 +64,13 @@ class GestureDispatcherTest {
         SequencerState state = new SequencerState();
         ClipWriter clipWriter = mock(ClipWriter.class);
         MidiOut midiOut = mock(MidiOut.class);
-        ControllerHost host = mock(ControllerHost.class);
-        Application application = mock(Application.class);
-        when(host.createApplication()).thenReturn(application);
+        HostContext hostContext = hostContext();
 
-        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, host);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
 
         dispatcher.dispatch(new RedoGesture());
 
-        verify(application).redo();
+        verify(hostContext.application).redo();
     }
 
     @Test
@@ -57,11 +78,9 @@ class GestureDispatcherTest {
         SequencerState state = new SequencerState();
         ClipWriter clipWriter = mock(ClipWriter.class);
         MidiOut midiOut = mock(MidiOut.class);
-        ControllerHost host = mock(ControllerHost.class);
-        Application application = mock(Application.class);
-        when(host.createApplication()).thenReturn(application);
+        HostContext hostContext = hostContext();
 
-        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, host);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
 
         dispatcher.setPlayhead(0, 47);
 
@@ -77,11 +96,9 @@ class GestureDispatcherTest {
 
         ClipWriter clipWriter = mock(ClipWriter.class);
         MidiOut midiOut = mock(MidiOut.class);
-        ControllerHost host = mock(ControllerHost.class);
-        Application application = mock(Application.class);
-        when(host.createApplication()).thenReturn(application);
+        HostContext hostContext = hostContext();
 
-        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, host);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
 
         dispatcher.dispatch(new PitchAssignGesture(1, 3, 64, 87));
 
@@ -104,11 +121,9 @@ class GestureDispatcherTest {
 
         ClipWriter clipWriter = mock(ClipWriter.class);
         MidiOut midiOut = mock(MidiOut.class);
-        ControllerHost host = mock(ControllerHost.class);
-        Application application = mock(Application.class);
-        when(host.createApplication()).thenReturn(application);
+        HostContext hostContext = hostContext();
 
-        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, host);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
 
         dispatcher.dispatch(new PitchAssignGesture(1, 3, 64, 70));
 
@@ -121,11 +136,9 @@ class GestureDispatcherTest {
 
         ClipWriter clipWriter = mock(ClipWriter.class);
         MidiOut midiOut = mock(MidiOut.class);
-        ControllerHost host = mock(ControllerHost.class);
-        Application application = mock(Application.class);
-        when(host.createApplication()).thenReturn(application);
+        HostContext hostContext = hostContext();
 
-        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, host);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
 
         dispatcher.dispatch(new PitchAssignGesture(0, 0, 60, 100));
 
@@ -139,11 +152,9 @@ class GestureDispatcherTest {
 
         ClipWriter clipWriter = mock(ClipWriter.class);
         MidiOut midiOut = mock(MidiOut.class);
-        ControllerHost host = mock(ControllerHost.class);
-        Application application = mock(Application.class);
-        when(host.createApplication()).thenReturn(application);
+        HostContext hostContext = hostContext();
 
-        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, host);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
 
         dispatcher.dispatch(new PitchAssignGesture(2, 4, 60, 115));
 
@@ -161,5 +172,74 @@ class GestureDispatcherTest {
         reset(clipWriter);
         dispatcher.dispatch(new PitchAssignGesture(2, 4, 60, 115));
         verify(clipWriter, never()).writeStep(anyInt(), anyInt(), anyBoolean(), any(StepState.class));
+    }
+
+    @Test
+    void scene_launch_dispatch_updates_focused_track_and_toggles_track_clip() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        HostContext hostContext = hostContext();
+
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new LaunchClipGesture(3));
+
+        assertEquals(3, state.getFocusedTrack());
+        verify(clipWriter).toggleTrackClipPlayback(3, 0);
+    }
+
+    @Test
+    void stop_all_gesture_calls_stop_all_track_clips() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        HostContext hostContext = hostContext();
+
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new StopAllGesture());
+
+        verify(clipWriter).stopAllTrackClips();
+    }
+
+    @Test
+    void play_pause_gesture_toggles_transport() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        ControllerHost host = mock(ControllerHost.class);
+        Application application = mock(Application.class);
+        Transport transport = mock(Transport.class);
+        SettableBooleanValue isPlaying = mock(SettableBooleanValue.class);
+        when(host.createApplication()).thenReturn(application);
+        when(host.createTransport()).thenReturn(transport);
+        when(transport.isPlaying()).thenReturn(isPlaying);
+        when(isPlaying.get()).thenReturn(false);
+
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, host);
+
+        dispatcher.dispatch(new ToggleTransportGesture());
+
+        verify(transport).togglePlay();
+    }
+
+    @Test
+    void scene_launch_led_is_yellow_when_track_is_playing_and_muted() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        HostContext hostContext = hostContext();
+
+        doAnswer(invocation -> {
+            ClipWriter.PlaybackStateListener listener = invocation.getArgument(0);
+            listener.onTrackPlayingChanged(2, true);
+            listener.onTrackMutedChanged(2, true);
+            return null;
+        }).when(clipWriter).setPlaybackStateListener(any());
+
+        new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        verify(midiOut).sendMidi(0x90, 0x54, LedRenderer.YELLOW);
     }
 }

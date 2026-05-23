@@ -85,6 +85,20 @@ public final class InputModifierTracker {
     public Gesture handleButton(ButtonEvent event) {
         ButtonId id = event.id();
 
+        if (event.pressed() && !isAnyModifierHeld()) {
+            if (id == ButtonId.PLAY_PAUSE) {
+                return new ToggleTransportGesture();
+            }
+            if (id == ButtonId.STOP_ALL_CLIPS) {
+                return new StopAllGesture();
+            }
+            int sceneTrack = sceneLaunchTrack(id);
+            if (sceneTrack >= 0) {
+                heldModifiers.add(id);
+                return new LaunchClipGesture(sceneTrack);
+            }
+        }
+
         // Update modifier held-set
         if (MODIFIER_BUTTONS.contains(id)) {
             if (event.pressed()) {
@@ -140,5 +154,16 @@ public final class InputModifierTracker {
     /** Returns {@code true} if any modifier button is currently held. */
     boolean isAnyModifierHeld() {
         return !heldModifiers.isEmpty();
+    }
+
+    private static int sceneLaunchTrack(ButtonId id) {
+        return switch (id) {
+            case SCENE_LAUNCH_0 -> 0;
+            case SCENE_LAUNCH_1 -> 1;
+            case SCENE_LAUNCH_2 -> 2;
+            case SCENE_LAUNCH_3 -> 3;
+            case SCENE_LAUNCH_4 -> 4;
+            default -> -1;
+        };
     }
 }

@@ -65,6 +65,7 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
         // tracks — so clips are never accidentally created on those.
         // ----------------------------------------------------------------
         PinnableCursorClip[] clips = new PinnableCursorClip[SequencerState.TRACK_COUNT];
+        Track[] tracks = new Track[SequencerState.TRACK_COUNT];
         cursors = new CursorTrack[SequencerState.TRACK_COUNT];
         mainTrackBank = host.createMainTrackBank(SequencerState.TRACK_COUNT, 0, 1);
         boolean[] clipCreateRequested = new boolean[SequencerState.TRACK_COUNT];
@@ -74,6 +75,7 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
         for (int t = 0; t < SequencerState.TRACK_COUNT; t++) {
             final int trackIndex = t;
             final Track bankTrack = mainTrackBank.getItemAt(trackIndex);
+            tracks[trackIndex] = bankTrack;
             bankTrack.exists().markInterested();
 
             CursorTrack cursor = host.createCursorTrack(
@@ -169,7 +171,7 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
         // ----------------------------------------------------------------
         // Wire up the domain model and dispatcher.
         // ----------------------------------------------------------------
-        BitwigClipWriter clipWriter = new BitwigClipWriter(clips, state);
+        BitwigClipWriter clipWriter = new BitwigClipWriter(clips, tracks, state);
         GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, ledOut, host);
 
         for (int t = 0; t < SequencerState.TRACK_COUNT; t++) {

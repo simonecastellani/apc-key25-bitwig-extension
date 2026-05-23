@@ -77,6 +77,44 @@ class InputModifierTrackerTest {
         assertNull(g, "RIGHT release → no gesture");
     }
 
+    @Test
+    void scene_launch_press_without_modifier_produces_launch_clip_gesture() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        Gesture g = tracker.handleButton(new ButtonEvent(ButtonId.SCENE_LAUNCH_3, true));
+
+        assertInstanceOf(LaunchClipGesture.class, g);
+        assertEquals(3, ((LaunchClipGesture) g).track());
+    }
+
+    @Test
+    void scene_launch_press_with_shift_held_produces_no_gesture() {
+        InputModifierTracker tracker = new InputModifierTracker();
+        tracker.handleButton(new ButtonEvent(ButtonId.SHIFT, true));
+
+        Gesture g = tracker.handleButton(new ButtonEvent(ButtonId.SCENE_LAUNCH_1, true));
+
+        assertNull(g);
+    }
+
+    @Test
+    void play_pause_press_without_modifier_produces_toggle_transport_gesture() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        Gesture g = tracker.handleButton(new ButtonEvent(ButtonId.PLAY_PAUSE, true));
+
+        assertInstanceOf(ToggleTransportGesture.class, g);
+    }
+
+    @Test
+    void stop_all_clips_press_without_modifier_produces_stop_all_gesture() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        Gesture g = tracker.handleButton(new ButtonEvent(ButtonId.STOP_ALL_CLIPS, true));
+
+        assertInstanceOf(StopAllGesture.class, g);
+    }
+
     // -----------------------------------------------------------------------
     // Modifier buttons do NOT produce gestures (they update held-state only)
     // -----------------------------------------------------------------------
@@ -89,9 +127,12 @@ class InputModifierTrackerTest {
     }
 
     @Test
-    void scene_launch_press_produces_no_gesture() {
+    void scene_launch_press_with_modifier_context_produces_no_gesture() {
         InputModifierTracker tracker = new InputModifierTracker();
+
+        tracker.handleButton(new ButtonEvent(ButtonId.REC, true));
         Gesture g = tracker.handleButton(new ButtonEvent(ButtonId.SCENE_LAUNCH_0, true));
+
         assertNull(g, "SCENE_LAUNCH press → no gesture (modifier state update only)");
     }
 
