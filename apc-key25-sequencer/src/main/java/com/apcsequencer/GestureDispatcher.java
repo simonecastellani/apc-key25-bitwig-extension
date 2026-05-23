@@ -49,6 +49,8 @@ public final class GestureDispatcher {
         if (gesture == null) return;
         if (gesture instanceof StepToggleGesture g) {
             handleStepToggle(g);
+        } else if (gesture instanceof PitchAssignGesture g) {
+            handlePitchAssign(g);
         } else if (gesture instanceof UndoGesture) {
             application.undo();
         } else if (gesture instanceof RedoGesture) {
@@ -95,6 +97,32 @@ public final class GestureDispatcher {
             StepState   step      = track.getStep(change.stepIndex());
             boolean     active    = step.isActive();
             clipWriter.writeStep(change.trackIndex(), change.stepIndex(), active, step);
+        }
+
+        flushLeds();
+    }
+
+    private void handlePitchAssign(PitchAssignGesture g) {
+        StepState currentStep = state.getStep(g.track(), g.step());
+        int oldPitch = currentStep.getPitch();
+        int oldVelocity = currentStep.getVelocity();
+        boolean wasActive = currentStep.isActive();
+
+        StateDiff pitchDiff = state.setStepPitch(g.track(), g.step(), g.pitch());
+        StateDiff velocityDiff = state.setStepVelocity(g.track(), g.step(), g.velocity());
+        boolean changed = !pitchDiff.isEmpty() || !velocityDiff.isEmpty();
+
+        if (wasActive && changed) {
+            StepState oldPitchSnapshot = currentStep.copy();
+            oldPitchSnapshot.setPitch(oldPitch);
+            oldPitchSnapshot.setVelocity(oldVelocity);
+            clipWriter.writeStep(g.track(), g.step(), false, oldPitchSnapshot);
+        }
+
+        if (changed) {
+            TrackState track = state.getTrack(g.track());
+            StepState step = track.getStep(g.step());
+            clipWriter.writeStep(g.track(), g.step(), step.isActive(), step);
         }
 
         flushLeds();

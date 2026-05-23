@@ -11,5 +11,5 @@ package com.apcsequencer;
  * this interface in the same package.</p>
  */
 public sealed interface Gesture
-        permits StepToggleGesture, UndoGesture, RedoGesture {
+        permits StepToggleGesture, PitchAssignGesture, UndoGesture, RedoGesture {
 }

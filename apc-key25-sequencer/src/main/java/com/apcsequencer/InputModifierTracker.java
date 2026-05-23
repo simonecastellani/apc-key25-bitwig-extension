@@ -16,8 +16,10 @@ import java.util.Set;
  *
  * <h3>Rules implemented in this slice (no modifier)</h3>
  * <ul>
- *   <li>Pad press + no modifier held → {@link StepToggleGesture}(track, step)</li>
- *   <li>Pad release → {@code null} (toggle fires on press only)</li>
+ *   <li>Pad tap + no modifier held → {@link StepToggleGesture}(track, step)</li>
+ *   <li>Pad hold + keyboard note press → {@link PitchAssignGesture}(track, step, pitch, velocity)</li>
+ *   <li>Pad release with no keyboard note during hold → emits tap-toggle gesture</li>
+ *   <li>Pad release after keyboard pitch-assign during hold → {@code null}</li>
  *   <li>LEFT press → {@link UndoGesture}</li>
  *   <li>RIGHT press → {@link RedoGesture}</li>
  *   <li>All other button press/release → update held-set, return {@code null}</li>
@@ -41,6 +43,9 @@ public final class InputModifierTracker {
     private int heldPadTrack = -1;
     private int heldPadStep  = -1;
 
+    /** True when current held-pad interaction should emit a tap-toggle on release. */
+    private boolean pendingTapToggle = false;
+
     // -----------------------------------------------------------------------
     // Public API
     // -----------------------------------------------------------------------
@@ -50,24 +55,27 @@ public final class InputModifierTracker {
      */
     public Gesture handlePad(PadEvent event) {
         if (!event.pressed()) {
-            // Release — clear any held-pad state
+            Gesture releaseGesture = null;
+
+            // Release — emit pending tap-toggle (if any), then clear held-pad state
             if (event.track() == heldPadTrack && event.step() == heldPadStep) {
+                if (pendingTapToggle) {
+                    releaseGesture = new StepToggleGesture(event.track(), event.step());
+                }
                 heldPadTrack = -1;
                 heldPadStep  = -1;
+                pendingTapToggle = false;
             }
-            return null; // toggle fires on press only
+
+            return releaseGesture;
         }
 
         // Press
         heldPadTrack = event.track();
         heldPadStep  = event.step();
+        pendingTapToggle = heldModifiers.isEmpty();
 
-        if (heldModifiers.isEmpty()) {
-            // No modifier — simple step toggle
-            return new StepToggleGesture(event.track(), event.step());
-        }
-
-        // Modifier is held — future slices will handle pad+modifier combos here
+        // Tap-vs-hold is decided on release/keyboard; no immediate gesture on press.
         return null;
     }
 
@@ -79,8 +87,17 @@ public final class InputModifierTracker {
 
         // Update modifier held-set
         if (MODIFIER_BUTTONS.contains(id)) {
-            if (event.pressed()) heldModifiers.add(id);
-            else                 heldModifiers.remove(id);
+            if (event.pressed()) {
+                heldModifiers.add(id);
+
+                // If a modifier is pressed during a held-pad interaction,
+                // do not treat that interaction as a simple tap-toggle.
+                if (heldPadTrack >= 0 && heldPadStep >= 0) {
+                    pendingTapToggle = false;
+                }
+            } else {
+                heldModifiers.remove(id);
+            }
             return null;
         }
 
@@ -92,6 +109,23 @@ public final class InputModifierTracker {
             case RIGHT -> new RedoGesture();
             default    -> null;
         };
+    }
+
+    /**
+     * Process a keyboard-note event and return the appropriate gesture, or {@code null}.
+     *
+     * <p>Rule for issue #5: if a pad is currently held and a keyboard key is pressed,
+     * emit {@link PitchAssignGesture} for that held step. Keyboard note-off produces
+     * no gesture.</p>
+     */
+    public Gesture handleKeyboard(KeyboardNoteEvent event) {
+        if (!event.pressed()) return null;
+        if (heldPadTrack < 0 || heldPadStep < 0) return null;
+
+        // Holding pad + keyboard means pitch assignment intent, not tap-toggle.
+        pendingTapToggle = false;
+
+        return new PitchAssignGesture(heldPadTrack, heldPadStep, event.pitch(), event.velocity());
     }
 
     // -----------------------------------------------------------------------

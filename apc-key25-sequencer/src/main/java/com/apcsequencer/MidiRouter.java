@@ -68,7 +68,7 @@ public final class MidiRouter {
         // 4. Try keyboard (stub — routed in a later slice)
         KeyboardNoteEvent key = MidiDecoder.decodeKeyboard(status, data1, data2);
         if (key != null) {
-            // TODO: route to live-record / pitch-assignment handler
+            dispatcher.dispatch(tracker.handleKeyboard(key));
         }
     }
 }

@@ -7,8 +7,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * TDD tests for {@link InputModifierTracker}.
  *
  * Slice C — no-modifier gestures:
- *   pad press (no modifier held) → StepToggleGesture(track, step)
- *   pad release                  → null (toggle fires on press only)
+ *   pad tap (no modifier held)   → StepToggleGesture(track, step)
+ *   pad press                    → null (tap/hold resolved later)
+ *   pad release                  → emits StepToggle only if no hold-action happened
  *   LEFT press                   → UndoGesture
  *   RIGHT press                  → RedoGesture
  *   LEFT/RIGHT release           → null
@@ -20,19 +21,17 @@ class InputModifierTrackerTest {
     // -----------------------------------------------------------------------
 
     @Test
-    void no_modifier_pad_press_produces_step_toggle_gesture() {
+    void no_modifier_pad_press_produces_no_immediate_gesture() {
         InputModifierTracker tracker = new InputModifierTracker();
         Gesture g = tracker.handlePad(new PadEvent(0, 0, true));
-        assertInstanceOf(StepToggleGesture.class, g, "pad press with no modifier → StepToggleGesture");
-        StepToggleGesture toggle = (StepToggleGesture) g;
-        assertEquals(0, toggle.track());
-        assertEquals(0, toggle.step());
+        assertNull(g, "pad press defers tap/hold decision until release");
     }
 
     @Test
-    void no_modifier_pad_press_encodes_correct_track_and_step() {
+    void no_modifier_pad_release_after_press_encodes_correct_track_and_step() {
         InputModifierTracker tracker = new InputModifierTracker();
-        Gesture g = tracker.handlePad(new PadEvent(3, 5, true));
+        tracker.handlePad(new PadEvent(3, 5, true));
+        Gesture g = tracker.handlePad(new PadEvent(3, 5, false));
         assertInstanceOf(StepToggleGesture.class, g);
         StepToggleGesture toggle = (StepToggleGesture) g;
         assertEquals(3, toggle.track(), "track must be preserved");
@@ -40,10 +39,10 @@ class InputModifierTrackerTest {
     }
 
     @Test
-    void no_modifier_pad_release_produces_no_gesture() {
+    void pad_release_without_matching_press_produces_no_gesture() {
         InputModifierTracker tracker = new InputModifierTracker();
         Gesture g = tracker.handlePad(new PadEvent(0, 0, false));
-        assertNull(g, "pad release → no gesture (toggle fires on press only)");
+        assertNull(g, "release without held pad should do nothing");
     }
 
     // -----------------------------------------------------------------------
@@ -94,5 +93,88 @@ class InputModifierTrackerTest {
         InputModifierTracker tracker = new InputModifierTracker();
         Gesture g = tracker.handleButton(new ButtonEvent(ButtonId.SCENE_LAUNCH_0, true));
         assertNull(g, "SCENE_LAUNCH press → no gesture (modifier state update only)");
+    }
+
+    @Test
+    void keyboard_press_with_held_pad_produces_pitch_assign_for_held_step() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        tracker.handlePad(new PadEvent(1, 3, true));
+        Gesture g = tracker.handleKeyboard(new KeyboardNoteEvent(64, 92, true));
+
+        assertInstanceOf(PitchAssignGesture.class, g);
+        PitchAssignGesture assign = (PitchAssignGesture) g;
+        assertEquals(1, assign.track());
+        assertEquals(3, assign.step());
+        assertEquals(64, assign.pitch());
+        assertEquals(92, assign.velocity());
+    }
+
+    @Test
+    void keyboard_release_with_held_pad_produces_no_gesture() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        tracker.handlePad(new PadEvent(1, 3, true));
+        Gesture g = tracker.handleKeyboard(new KeyboardNoteEvent(64, 0, false));
+
+        assertNull(g);
+    }
+
+    @Test
+    void no_modifier_pad_tap_produces_step_toggle_on_release() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        tracker.handlePad(new PadEvent(0, 0, true));
+        Gesture g = tracker.handlePad(new PadEvent(0, 0, false));
+
+        assertInstanceOf(StepToggleGesture.class, g);
+        StepToggleGesture toggle = (StepToggleGesture) g;
+        assertEquals(0, toggle.track());
+        assertEquals(0, toggle.step());
+    }
+
+    @Test
+    void pad_hold_plus_keyboard_does_not_emit_toggle_on_release() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        tracker.handlePad(new PadEvent(1, 3, true));
+        tracker.handleKeyboard(new KeyboardNoteEvent(64, 100, true));
+        Gesture release = tracker.handlePad(new PadEvent(1, 3, false));
+
+        assertNull(release, "pitch-assign hold should not also toggle active state");
+    }
+
+    @Test
+    void keyboard_press_without_held_pad_produces_no_gesture() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        Gesture g = tracker.handleKeyboard(new KeyboardNoteEvent(64, 127, true));
+
+        assertNull(g);
+    }
+
+    @Test
+    void multiple_keyboard_presses_assign_last_key_pressed() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        tracker.handlePad(new PadEvent(1, 3, true));
+        tracker.handleKeyboard(new KeyboardNoteEvent(64, 90, true));
+        Gesture g = tracker.handleKeyboard(new KeyboardNoteEvent(69, 110, true));
+
+        assertInstanceOf(PitchAssignGesture.class, g);
+        PitchAssignGesture assign = (PitchAssignGesture) g;
+        assertEquals(69, assign.pitch(), "last key pressed should win");
+        assertEquals(110, assign.velocity(), "last key velocity should win");
+    }
+
+    @Test
+    void releasing_pad_without_keyboard_leaves_no_pending_assignment() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        tracker.handlePad(new PadEvent(1, 3, true));
+        tracker.handlePad(new PadEvent(1, 3, false));
+        Gesture g = tracker.handleKeyboard(new KeyboardNoteEvent(64, 127, true));
+
+        assertNull(g);
     }
 }
