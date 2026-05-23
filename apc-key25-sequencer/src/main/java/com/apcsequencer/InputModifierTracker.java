@@ -50,6 +50,7 @@ public final class InputModifierTracker {
     private boolean scaleSelectionOverlayActive = false;
     private boolean sequenceBankOverlayActive = false;
     private boolean sequenceBankClearMode = false;
+    private boolean copyOverlayActive = false;
 
     // -----------------------------------------------------------------------
     // Public API
@@ -59,6 +60,14 @@ public final class InputModifierTracker {
      * Process a pad event and return the appropriate gesture, or {@code null}.
      */
     public Gesture handlePad(PadEvent event) {
+        if (copyOverlayActive) {
+            if (event.pressed()) {
+                pendingTapToggle = false;
+                return new CopyPadGesture(event.track(), event.step());
+            }
+            return null;
+        }
+
         if (sequenceBankOverlayActive) {
             if (event.pressed()) {
                 pendingTapToggle = false;
@@ -113,6 +122,26 @@ public final class InputModifierTracker {
      */
     public Gesture handleButton(ButtonEvent event) {
         ButtonId id = event.id();
+
+        if (id == ButtonId.SUSTAIN && event.pressed() && !heldModifiers.contains(ButtonId.SHIFT)) {
+            copyOverlayActive = !copyOverlayActive;
+            if (copyOverlayActive) {
+                heldModifiers.add(ButtonId.SUSTAIN);
+            } else {
+                heldModifiers.remove(ButtonId.SUSTAIN);
+            }
+            if (heldPadTrack >= 0 && heldPadStep >= 0) {
+                pendingTapToggle = false;
+            }
+            return new SetCopyOverlayGesture(copyOverlayActive);
+        }
+
+        if (copyOverlayActive && event.pressed()) {
+            int sceneTrack = sceneLaunchTrack(id);
+            if (sceneTrack >= 0) {
+                return new CopyTrackGesture(sceneTrack);
+            }
+        }
 
         if (id == ButtonId.VOLUME) {
             if (event.pressed() && heldModifiers.contains(ButtonId.SHIFT)) {
@@ -204,6 +233,11 @@ public final class InputModifierTracker {
                 heldModifiers.add(id);
                 return new LaunchClipGesture(sceneTrack);
             }
+        }
+
+        if (id == ButtonId.SUSTAIN && !event.pressed()) {
+            heldModifiers.remove(ButtonId.SUSTAIN);
+            return null;
         }
 
         // Update modifier held-set

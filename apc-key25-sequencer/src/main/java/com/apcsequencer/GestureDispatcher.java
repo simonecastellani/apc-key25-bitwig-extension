@@ -125,8 +125,26 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
             flushLeds();
             return;
         }
+        if (gesture instanceof SetCopyOverlayGesture g) {
+            if (g.active()) {
+                overlayController.enterCopy();
+            } else if (overlayController.getMode() == OverlayMode.COPY_SOURCE
+                    || overlayController.getMode() == OverlayMode.COPY_TARGET) {
+                overlayController.returnToNormal();
+            }
+            flushLeds();
+            return;
+        }
         if (gesture instanceof SequenceBankPadGesture g) {
             handleSequenceBankPad(g);
+            return;
+        }
+        if (gesture instanceof CopyPadGesture g) {
+            handleCopyPad(g);
+            return;
+        }
+        if (gesture instanceof CopyTrackGesture g) {
+            handleCopyTrack(g);
             return;
         }
         if (gesture instanceof MoveAllTracksSequenceSlotGesture g) {
@@ -209,6 +227,11 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
             case SEQUENCE_BANK -> LedRenderer.renderSequenceBank(state);
             default -> LedRenderer.render(state, playheads);
         };
+
+        if (overlayController.getMode() == OverlayMode.COPY_TARGET && overlayController.hasCopyStepSource()) {
+            leds[overlayController.copySourceTrack()][overlayController.copySourceStep()] = LedRenderer.YELLOW_BLINK;
+        }
+
         for (int t = 0; t < SequencerState.TRACK_COUNT; t++) {
             for (int s = 0; s < TrackState.STEP_COUNT; s++) {
                 int padNote  = (4 - t) * 8 + s;   // pad LED MIDI note
@@ -219,9 +242,16 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
 
         for (int track = 0; track < SequencerState.TRACK_COUNT; track++) {
             int note = SCENE_LAUNCH_NOTE_BASE + track;
-            int velocity = trackPlaying[track]
-                    ? (trackMuted[track] ? LedRenderer.YELLOW : LedRenderer.GREEN)
-                    : LedRenderer.OFF;
+            int velocity;
+            if (overlayController.getMode() == OverlayMode.COPY_TARGET
+                    && overlayController.hasCopyTrackSource()
+                    && overlayController.copySourceSceneTrack() == track) {
+                velocity = LedRenderer.YELLOW_BLINK;
+            } else {
+                velocity = trackPlaying[track]
+                        ? (trackMuted[track] ? LedRenderer.YELLOW : LedRenderer.GREEN)
+                        : LedRenderer.OFF;
+            }
             midiOut.sendMidi(0x90, note, velocity);
         }
 
@@ -530,6 +560,50 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
             state.switchSlot(track, destination);
             clipWriter.launchSlot(track, destination);
         }
+        flushLeds();
+    }
+
+    private void handleCopyPad(CopyPadGesture g) {
+        if (overlayController.getMode() == OverlayMode.COPY_SOURCE) {
+            overlayController.selectCopySourceStep(g.track(), g.step());
+            flushLeds();
+            return;
+        }
+
+        if (overlayController.getMode() != OverlayMode.COPY_TARGET || !overlayController.hasCopyStepSource()) {
+            return;
+        }
+
+        StateDiff diff = state.copyStep(
+                overlayController.copySourceTrack(),
+                overlayController.copySourceStep(),
+                g.track(),
+                g.step());
+
+        if (!diff.isEmpty()) {
+            StepState destination = state.getStep(g.track(), g.step());
+            clipWriter.writeStep(g.track(), g.step(), destination.isActive(), destination);
+        }
+        overlayController.returnToNormal();
+        flushLeds();
+    }
+
+    private void handleCopyTrack(CopyTrackGesture g) {
+        if (overlayController.getMode() == OverlayMode.COPY_SOURCE) {
+            overlayController.selectCopySourceTrack(g.track());
+            flushLeds();
+            return;
+        }
+
+        if (overlayController.getMode() != OverlayMode.COPY_TARGET || !overlayController.hasCopyTrackSource()) {
+            return;
+        }
+
+        StateDiff diff = state.copyTrackSequence(overlayController.copySourceSceneTrack(), g.track());
+        if (!diff.isEmpty()) {
+            clipWriter.applyTrackTiming(g.track());
+        }
+        overlayController.returnToNormal();
         flushLeds();
     }
 

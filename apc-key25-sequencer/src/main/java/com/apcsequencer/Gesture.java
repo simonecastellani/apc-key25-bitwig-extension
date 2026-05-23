@@ -17,9 +17,10 @@ public sealed interface Gesture
                 TrackLoopEndPointGesture, PerTrackKnobTurnGesture,
                 ToggleTrackMuteGesture, SetVolumeHeldGesture, SetPanHeldGesture,
                 SetSendHeldGesture, SetDeviceHeldGesture,
-                DeviceMacroTurnGesture, SendLevelTurnGesture,
-                ToggleScaleSelectionOverlayGesture, DismissScaleSelectionOverlayGesture,
-                ScaleSelectionPadGesture,
-                SetSequenceBankOverlayGesture, SequenceBankPadGesture,
-                MoveAllTracksSequenceSlotGesture {
+                 DeviceMacroTurnGesture, SendLevelTurnGesture,
+                 ToggleScaleSelectionOverlayGesture, DismissScaleSelectionOverlayGesture,
+                 ScaleSelectionPadGesture,
+                 SetSequenceBankOverlayGesture, SequenceBankPadGesture,
+                 MoveAllTracksSequenceSlotGesture,
+                 SetCopyOverlayGesture, CopyPadGesture, CopyTrackGesture {
 }

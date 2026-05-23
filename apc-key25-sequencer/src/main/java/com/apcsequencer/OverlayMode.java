@@ -11,8 +11,10 @@ public enum OverlayMode {
     SEQUENCE_BANK,
     /** Scale Selection overlay (activated by Shift + Volume). */
     SCALE_SELECTION,
-    /** Copy mode overlay (activated by Sustain pedal). */
-    COPY,
+    /** Copy mode waiting for source selection (activated by Sustain pedal). */
+    COPY_SOURCE,
+    /** Copy mode waiting for target selection after source is chosen. */
+    COPY_TARGET,
     /** Clear mode overlay (activated by Shift + Sustain). */
     CLEAR,
 }

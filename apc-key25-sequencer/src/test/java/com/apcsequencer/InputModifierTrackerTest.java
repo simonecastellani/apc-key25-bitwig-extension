@@ -578,4 +578,42 @@ class InputModifierTrackerTest {
         assertInstanceOf(MoveAllTracksSequenceSlotGesture.class, down);
         assertEquals(-1, ((MoveAllTracksSequenceSlotGesture) down).delta());
     }
+
+    @Test
+    void sustain_press_toggles_copy_overlay_on_and_off() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        Gesture on = tracker.handleButton(new ButtonEvent(ButtonId.SUSTAIN, true));
+        Gesture off = tracker.handleButton(new ButtonEvent(ButtonId.SUSTAIN, true));
+
+        assertInstanceOf(SetCopyOverlayGesture.class, on);
+        assertTrue(((SetCopyOverlayGesture) on).active());
+
+        assertInstanceOf(SetCopyOverlayGesture.class, off);
+        assertFalse(((SetCopyOverlayGesture) off).active());
+    }
+
+    @Test
+    void pad_press_while_copy_overlay_active_emits_copy_pad_gesture() {
+        InputModifierTracker tracker = new InputModifierTracker();
+        tracker.handleButton(new ButtonEvent(ButtonId.SUSTAIN, true));
+
+        Gesture g = tracker.handlePad(new PadEvent(3, 6, true));
+
+        assertInstanceOf(CopyPadGesture.class, g);
+        CopyPadGesture copy = (CopyPadGesture) g;
+        assertEquals(3, copy.track());
+        assertEquals(6, copy.step());
+    }
+
+    @Test
+    void scene_launch_press_while_copy_overlay_active_emits_copy_track_gesture() {
+        InputModifierTracker tracker = new InputModifierTracker();
+        tracker.handleButton(new ButtonEvent(ButtonId.SUSTAIN, true));
+
+        Gesture g = tracker.handleButton(new ButtonEvent(ButtonId.SCENE_LAUNCH_2, true));
+
+        assertInstanceOf(CopyTrackGesture.class, g);
+        assertEquals(2, ((CopyTrackGesture) g).track());
+    }
 }

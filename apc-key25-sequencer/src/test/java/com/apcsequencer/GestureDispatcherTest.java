@@ -918,4 +918,94 @@ class GestureDispatcherTest {
         verify(clipWriter).launchSlot(3, 1);
         verify(clipWriter).launchSlot(4, 1);
     }
+
+    @Test
+    void copy_step_gestures_clone_step_parameters_and_rewrite_destination_step() {
+        SequencerState state = new SequencerState();
+        state.setStepActive(1, 2, true);
+        state.setStepPitch(1, 2, 72);
+        state.setStepVelocity(1, 2, 81);
+        state.setStepGateLength(1, 2, 0.64);
+        state.setStepProbability(1, 2, 0.37);
+        state.setStepChordVoicing(1, 2, ChordVoicing.MAJ7);
+        state.setStepScaleDegreeOffset(1, 2, -2);
+        state.setStepRatchetCount(1, 2, 5);
+        state.setStepRatchetDecay(1, 2, 0.2);
+        state.setStepCondition(1, 2, StepCondition.EVERY_4TH);
+
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new SetCopyOverlayGesture(true));
+        dispatcher.dispatch(new CopyPadGesture(1, 2));
+        dispatcher.dispatch(new CopyPadGesture(3, 6));
+
+        StepState destination = state.getStep(3, 6);
+        assertTrue(destination.isActive());
+        assertEquals(72, destination.getPitch());
+        assertEquals(81, destination.getVelocity());
+        assertEquals(0.64, destination.getGateLength(), 1e-9);
+        assertEquals(0.37, destination.getProbability(), 1e-9);
+        assertEquals(ChordVoicing.MAJ7, destination.getChordVoicing());
+        assertEquals(-2, destination.getScaleDegreeOffset());
+        assertEquals(5, destination.getRatchetCount());
+        assertEquals(0.2, destination.getRatchetDecay(), 1e-9);
+        assertEquals(StepCondition.EVERY_4TH, destination.getStepCondition());
+        verify(clipWriter).writeStep(eq(3), eq(6), eq(true), any(StepState.class));
+    }
+
+    @Test
+    void copy_track_gestures_clone_track_sequence_and_apply_track_timing() {
+        SequencerState state = new SequencerState();
+        state.setLoopEndPoint(0, 5);
+        state.setStepDuration(0, StepDuration.S8);
+        state.setStepActive(0, 0, true);
+        state.setStepPitch(0, 0, 65);
+        state.setStepVelocity(0, 0, 111);
+
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new SetCopyOverlayGesture(true));
+        dispatcher.dispatch(new CopyTrackGesture(0));
+        dispatcher.dispatch(new CopyTrackGesture(4));
+
+        assertEquals(5, state.getTrack(4).getLoopEndPoint());
+        assertEquals(StepDuration.S8, state.getTrack(4).getStepDuration());
+        assertTrue(state.getStep(4, 0).isActive());
+        assertEquals(65, state.getStep(4, 0).getPitch());
+        assertEquals(111, state.getStep(4, 0).getVelocity());
+        verify(clipWriter).applyTrackTiming(4);
+    }
+
+    @Test
+    void copy_source_step_blinks_yellow_in_copy_target_state() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        reset(midiOut);
+        dispatcher.dispatch(new SetCopyOverlayGesture(true));
+        dispatcher.dispatch(new CopyPadGesture(2, 3));
+
+        int sourcePadNote = (4 - 2) * 8 + 3;
+        verify(midiOut).sendMidi(0x90, sourcePadNote, LedRenderer.YELLOW_BLINK);
+    }
+
+    @Test
+    void copy_source_track_scene_launch_blinks_yellow_in_copy_target_state() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        reset(midiOut);
+        dispatcher.dispatch(new SetCopyOverlayGesture(true));
+        dispatcher.dispatch(new CopyTrackGesture(3));
+
+        verify(midiOut).sendMidi(0x90, 0x52 + 3, LedRenderer.YELLOW_BLINK);
+    }
 }
