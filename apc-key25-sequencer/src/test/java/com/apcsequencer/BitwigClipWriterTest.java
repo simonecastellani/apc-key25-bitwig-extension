@@ -299,7 +299,7 @@ class BitwigClipWriterTest {
         when(clips[0].getStep(anyInt(), anyInt(), anyInt())).thenReturn(noteStep);
 
         writer.writeStepParameters(0, 2, 60, 0.8, 0.25, 0.5, 4, -0.5,
-                NoteOccurrence.FIRST, 4, 0b0001);
+                NoteOccurrence.FIRST, 4, 0b0001, 7);
 
         verify(noteStep).setVelocity(0.8);
         verify(noteStep).setDuration(0.25);
@@ -311,6 +311,32 @@ class BitwigClipWriterTest {
         verify(noteStep).setIsOccurrenceEnabled(true);
         verify(noteStep).setRecurrence(4, 0b0001);
         verify(noteStep).setIsRecurrenceEnabled(true);
+        verify(noteStep).setTranspose(7);
+    }
+
+    @Test
+    void writeStep_applies_scale_degree_offset_transpose_from_global_scale() {
+        StepState step = new StepState();
+        step.setScaleDegreeOffset(1);
+
+        writer.writeStep(0, 0, true, step);
+
+        NoteStep noteStep = clips[0].getStep(0, 0, 60);
+        verify(noteStep).setTranspose(2);
+    }
+
+    @Test
+    void writeStep_recomputes_transpose_when_global_scale_changes() {
+        StepState step = new StepState();
+        step.setScaleDegreeOffset(2);
+
+        writer.writeStep(0, 0, true, step);
+        NoteStep noteStep = clips[0].getStep(0, 0, 60);
+        verify(noteStep).setTranspose(4);
+
+        state.setGlobalScale(new GlobalScale(0, Mode.MINOR));
+        writer.writeStep(0, 0, true, step);
+        verify(noteStep).setTranspose(3);
     }
 
     @Test

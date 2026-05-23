@@ -45,6 +45,7 @@ public interface ClipWriter {
      * @param occurrence note occurrence condition
      * @param recurrenceLength recurrence cycle length
      * @param recurrenceMask recurrence bit-mask
+     * @param transposeSemitones per-note transpose in semitones (-96..96)
      */
     void writeStepParameters(int track,
                              int step,
@@ -56,7 +57,8 @@ public interface ClipWriter {
                              double repeatVelocityEnd,
                              NoteOccurrence occurrence,
                              int recurrenceLength,
-                             int recurrenceMask);
+                             int recurrenceMask,
+                             int transposeSemitones);
 
     /**
      * Applies track timing (Step Duration + Loop End Point) and rewrites all steps.

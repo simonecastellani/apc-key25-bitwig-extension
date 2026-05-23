@@ -57,7 +57,8 @@ class GestureDispatcherTest {
                                         double repeatVelocityEnd,
                                         com.bitwig.extension.controller.api.NoteOccurrence occurrence,
                                         int recurrenceLength,
-                                        int recurrenceMask) {
+                                        int recurrenceMask,
+                                        int transposeSemitones) {
         }
 
         @Override
@@ -371,6 +372,57 @@ class GestureDispatcherTest {
 
         dispatcher.dispatch(new PerStepKnobTurnGesture(2, 3, PerStepParameter.STEP_CONDITION, 1));
         assertEquals(StepCondition.ALWAYS, state.getStep(2, 3).getStepCondition());
+    }
+
+    @Test
+    void per_step_knob_scale_degree_offset_updates_state_and_rewrites_step() {
+        SequencerState state = new SequencerState();
+        state.toggleStep(0, 1);
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        HostContext hostContext = hostContext();
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new PerStepKnobTurnGesture(0, 1, PerStepParameter.SCALE_DEGREE_OFFSET, 1));
+
+        assertEquals(1, state.getStep(0, 1).getScaleDegreeOffset());
+        verify(clipWriter).writeStep(eq(0), eq(1), eq(true), any(StepState.class));
+    }
+
+    @Test
+    void per_step_knob_scale_degree_offset_is_clamped_to_minus7_plus7() {
+        SequencerState state = new SequencerState();
+        state.setStepScaleDegreeOffset(1, 2, 7);
+        state.toggleStep(1, 2);
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        HostContext hostContext = hostContext();
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new PerStepKnobTurnGesture(1, 2, PerStepParameter.SCALE_DEGREE_OFFSET, 1));
+
+        assertEquals(7, state.getStep(1, 2).getScaleDegreeOffset());
+        verify(clipWriter, never()).writeStep(anyInt(), anyInt(), anyBoolean(), any(StepState.class));
+    }
+
+    @Test
+    void update_global_scale_rewrites_all_active_steps() {
+        SequencerState state = new SequencerState();
+        state.toggleStep(0, 0);
+        state.toggleStep(2, 5);
+        state.toggleStep(4, 7);
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        HostContext hostContext = hostContext();
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.updateGlobalScale(new GlobalScale(0, Mode.MINOR));
+
+        assertEquals(new GlobalScale(0, Mode.MINOR), state.getGlobalScale());
+        verify(clipWriter).writeStep(eq(0), eq(0), eq(true), any(StepState.class));
+        verify(clipWriter).writeStep(eq(2), eq(5), eq(true), any(StepState.class));
+        verify(clipWriter).writeStep(eq(4), eq(7), eq(true), any(StepState.class));
+        verify(clipWriter, times(3)).writeStep(anyInt(), anyInt(), eq(true), any(StepState.class));
     }
 
     @Test

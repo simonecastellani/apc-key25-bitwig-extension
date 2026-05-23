@@ -165,7 +165,8 @@ public final class BitwigClipWriter implements ClipWriter {
                                     double repeatVelocityEnd,
                                     NoteOccurrence occurrence,
                                     int recurrenceLength,
-                                    int recurrenceMask) {
+                                    int recurrenceMask,
+                                    int transposeSemitones) {
         PinnableCursorClip clip = clips[track];
         NoteStep noteStep = clip.getStep(0, step, pitch);
         noteStep.setVelocity(velocity);
@@ -184,6 +185,7 @@ public final class BitwigClipWriter implements ClipWriter {
             noteStep.setIsRecurrenceEnabled(false);
         }
         noteStep.setIsRepeatEnabled(repeatCount > 1 || repeatVelocityEnd != 0.0);
+        noteStep.setTranspose(transposeSemitones);
     }
 
     @Override
@@ -248,6 +250,7 @@ public final class BitwigClipWriter implements ClipWriter {
         int effectivePitch = effectivePitch(stepState.getPitch(), trackState.getTranspose());
         double stepBeatTime = trackState.getStepDuration().beatTime();
         double gateDuration = stepState.getGateLength() * stepBeatTime;
+        int transposeSemitones = ScaleEngine.semitoneOffset(state.getGlobalScale(), stepState.getScaleDegreeOffset());
 
         if (active) {
             clip.setStep(0, resolvedStep, effectivePitch, stepState.getVelocity(), gateDuration);
@@ -262,7 +265,8 @@ public final class BitwigClipWriter implements ClipWriter {
                     -stepState.getRatchetDecay(),
                     NoteOccurrence.ALWAYS,
                     recurrenceLength(stepState.getStepCondition()),
-                    recurrenceMask(stepState.getStepCondition()));
+                    recurrenceMask(stepState.getStepCondition()),
+                    transposeSemitones);
         } else {
             clip.clearStep(0, resolvedStep, effectivePitch);
         }
