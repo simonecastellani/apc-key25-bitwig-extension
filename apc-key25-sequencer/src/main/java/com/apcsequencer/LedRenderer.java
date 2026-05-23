@@ -136,6 +136,34 @@ public final class LedRenderer {
         return leds;
     }
 
+    /**
+     * Compute the LED grid for Sequence Bank overlay.
+     *
+     * <p>Per slot colour:</p>
+     * <ul>
+     *   <li>off: empty slot</li>
+     *   <li>green: populated slot</li>
+     *   <li>yellow: currently active slot</li>
+     * </ul>
+     */
+    public static int[][] renderSequenceBank(SequencerState state) {
+        int[][] leds = new int[SequencerState.TRACK_COUNT][TrackState.STEP_COUNT];
+        for (int track = 0; track < SequencerState.TRACK_COUNT; track++) {
+            TrackState trackState = state.getTrack(track);
+            int activeSlot = trackState.getActiveSlot();
+            for (int slot = 0; slot < TrackState.SLOT_COUNT; slot++) {
+                if (slot == activeSlot) {
+                    leds[track][slot] = YELLOW;
+                } else if (trackState.isSlotPopulated(slot)) {
+                    leds[track][slot] = GREEN;
+                } else {
+                    leds[track][slot] = OFF;
+                }
+            }
+        }
+        return leds;
+    }
+
     private static int normalizePlayhead(int rawPlayhead, int loopEnd) {
         if (rawPlayhead < 0) {
             return -1;

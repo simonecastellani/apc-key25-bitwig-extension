@@ -524,4 +524,58 @@ class InputModifierTrackerTest {
         assertInstanceOf(ToggleTrackMuteGesture.class, g);
         assertEquals(1, ((ToggleTrackMuteGesture) g).track());
     }
+
+    @Test
+    void rec_press_toggles_sequence_bank_overlay_on_and_off() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        Gesture on = tracker.handleButton(new ButtonEvent(ButtonId.REC, true));
+        Gesture off = tracker.handleButton(new ButtonEvent(ButtonId.REC, true));
+
+        assertInstanceOf(SetSequenceBankOverlayGesture.class, on);
+        assertTrue(((SetSequenceBankOverlayGesture) on).active());
+        assertFalse(((SetSequenceBankOverlayGesture) on).clearMode());
+
+        assertInstanceOf(SetSequenceBankOverlayGesture.class, off);
+        assertFalse(((SetSequenceBankOverlayGesture) off).active());
+    }
+
+    @Test
+    void shift_plus_rec_press_enables_sequence_bank_clear_mode() {
+        InputModifierTracker tracker = new InputModifierTracker();
+        tracker.handleButton(new ButtonEvent(ButtonId.SHIFT, true));
+
+        Gesture g = tracker.handleButton(new ButtonEvent(ButtonId.REC, true));
+
+        assertInstanceOf(SetSequenceBankOverlayGesture.class, g);
+        SetSequenceBankOverlayGesture overlay = (SetSequenceBankOverlayGesture) g;
+        assertTrue(overlay.active());
+        assertTrue(overlay.clearMode());
+    }
+
+    @Test
+    void pad_press_while_sequence_bank_overlay_active_emits_sequence_bank_pad_gesture() {
+        InputModifierTracker tracker = new InputModifierTracker();
+        tracker.handleButton(new ButtonEvent(ButtonId.REC, true));
+
+        Gesture g = tracker.handlePad(new PadEvent(4, 7, true));
+
+        assertInstanceOf(SequenceBankPadGesture.class, g);
+        SequenceBankPadGesture pad = (SequenceBankPadGesture) g;
+        assertEquals(4, pad.track());
+        assertEquals(7, pad.slot());
+    }
+
+    @Test
+    void up_and_down_press_emit_move_all_tracks_sequence_slot_gestures() {
+        InputModifierTracker tracker = new InputModifierTracker();
+
+        Gesture up = tracker.handleButton(new ButtonEvent(ButtonId.UP, true));
+        Gesture down = tracker.handleButton(new ButtonEvent(ButtonId.DOWN, true));
+
+        assertInstanceOf(MoveAllTracksSequenceSlotGesture.class, up);
+        assertEquals(1, ((MoveAllTracksSequenceSlotGesture) up).delta());
+        assertInstanceOf(MoveAllTracksSequenceSlotGesture.class, down);
+        assertEquals(-1, ((MoveAllTracksSequenceSlotGesture) down).delta());
+    }
 }

@@ -10,10 +10,16 @@ package com.apcsequencer;
 public final class OverlayController {
 
     private OverlayMode currentMode = OverlayMode.NORMAL;
+    private boolean sequenceBankClearMode;
 
     /** Returns the currently active overlay mode. */
     public OverlayMode getMode() {
         return currentMode;
+    }
+
+    /** True when Sequence Bank overlay is in clear mode (Shift + Rec). */
+    public boolean isSequenceBankClearMode() {
+        return sequenceBankClearMode;
     }
 
     // ------------------------------------------------------------------
@@ -21,8 +27,9 @@ public final class OverlayController {
     // ------------------------------------------------------------------
 
     /** Activates the Sequence Bank overlay (Rec button). */
-    public void enterSequenceBank() {
+    public void enterSequenceBank(boolean clearMode) {
         currentMode = OverlayMode.SEQUENCE_BANK;
+        sequenceBankClearMode = clearMode;
     }
 
     /** Activates the Scale Selection overlay (Shift + Volume). */
@@ -43,5 +50,6 @@ public final class OverlayController {
     /** Returns to the Normal step-edit view. */
     public void returnToNormal() {
         currentMode = OverlayMode.NORMAL;
+        sequenceBankClearMode = false;
     }
 }

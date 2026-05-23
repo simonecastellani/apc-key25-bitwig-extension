@@ -262,6 +262,21 @@ public final class SequencerState {
         return b.build();
     }
 
+    /** Clears the given slot and marks all steps changed when active slot is cleared. */
+    public StateDiff clearSlot(int trackIndex, int slotIndex) {
+        TrackState track = tracks[trackIndex];
+        boolean activeBefore = track.getActiveSlot() == slotIndex;
+        track.clearSlot(slotIndex);
+        if (!activeBefore) {
+            return StateDiff.builder().build();
+        }
+        StateDiff.Builder b = StateDiff.builder();
+        for (int s = 0; s < TrackState.STEP_COUNT; s++) {
+            b.addStepChange(trackIndex, s);
+        }
+        return b.build();
+    }
+
     // -------------------------------------------------------------------
     // Global mutations
     // -------------------------------------------------------------------

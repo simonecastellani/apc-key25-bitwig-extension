@@ -383,6 +383,17 @@ class SequencerStateTest {
         assertEquals(0, countActive(pattern), "0-in-8: no steps active");
     }
 
+    @Test
+    void clear_slot_resets_live_steps_when_clearing_active_slot() {
+        SequencerState state = new SequencerState();
+        state.toggleStep(0, 3);
+
+        state.clearSlot(0, 0);
+
+        assertFalse(state.getStep(0, 3).isActive());
+        assertFalse(state.getTrack(0).isSlotPopulated(0));
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------

@@ -19,5 +19,7 @@ public sealed interface Gesture
                 SetSendHeldGesture, SetDeviceHeldGesture,
                 DeviceMacroTurnGesture, SendLevelTurnGesture,
                 ToggleScaleSelectionOverlayGesture, DismissScaleSelectionOverlayGesture,
-                ScaleSelectionPadGesture {
+                ScaleSelectionPadGesture,
+                SetSequenceBankOverlayGesture, SequenceBankPadGesture,
+                MoveAllTracksSequenceSlotGesture {
 }

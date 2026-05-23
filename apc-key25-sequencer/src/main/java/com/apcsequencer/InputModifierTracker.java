@@ -48,6 +48,8 @@ public final class InputModifierTracker {
 
     /** Local mirror of Scale Selection overlay state. */
     private boolean scaleSelectionOverlayActive = false;
+    private boolean sequenceBankOverlayActive = false;
+    private boolean sequenceBankClearMode = false;
 
     // -----------------------------------------------------------------------
     // Public API
@@ -57,6 +59,14 @@ public final class InputModifierTracker {
      * Process a pad event and return the appropriate gesture, or {@code null}.
      */
     public Gesture handlePad(PadEvent event) {
+        if (sequenceBankOverlayActive) {
+            if (event.pressed()) {
+                pendingTapToggle = false;
+                return new SequenceBankPadGesture(event.track(), event.step());
+            }
+            return null;
+        }
+
         if (scaleSelectionOverlayActive) {
             if (event.pressed()) {
                 return new ScaleSelectionPadGesture(event.track(), event.step());
@@ -157,6 +167,24 @@ public final class InputModifierTracker {
             return new SetDeviceHeldGesture(event.pressed());
         }
 
+        if (id == ButtonId.REC) {
+            if (event.pressed()) {
+                sequenceBankOverlayActive = !sequenceBankOverlayActive;
+                sequenceBankClearMode = sequenceBankOverlayActive && heldModifiers.contains(ButtonId.SHIFT);
+                if (sequenceBankOverlayActive) {
+                    heldModifiers.add(ButtonId.REC);
+                } else {
+                    heldModifiers.remove(ButtonId.REC);
+                    sequenceBankClearMode = false;
+                }
+                if (heldPadTrack >= 0 && heldPadStep >= 0) {
+                    pendingTapToggle = false;
+                }
+                return new SetSequenceBankOverlayGesture(sequenceBankOverlayActive, sequenceBankClearMode);
+            }
+            return null;
+        }
+
         if (event.pressed() && heldModifiers.contains(ButtonId.VOLUME)) {
             int sceneTrack = sceneLaunchTrack(id);
             if (sceneTrack >= 0) {
@@ -202,6 +230,8 @@ public final class InputModifierTracker {
         if (!event.pressed()) return null;
 
         return switch (id) {
+            case UP    -> new MoveAllTracksSequenceSlotGesture(1);
+            case DOWN  -> new MoveAllTracksSequenceSlotGesture(-1);
             case LEFT  -> new UndoGesture();
             case RIGHT -> new RedoGesture();
             default    -> null;
