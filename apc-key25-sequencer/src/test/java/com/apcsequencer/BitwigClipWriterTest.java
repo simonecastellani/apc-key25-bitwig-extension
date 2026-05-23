@@ -4,6 +4,8 @@ import com.bitwig.extension.callback.BooleanValueChangedCallback;
 import com.bitwig.extension.callback.ClipLauncherSlotBankPlaybackStateChangedCallback;
 import com.bitwig.extension.controller.api.BooleanValue;
 import com.bitwig.extension.controller.api.ClipLauncherSlotBank;
+import com.bitwig.extension.controller.api.NoteOccurrence;
+import com.bitwig.extension.controller.api.NoteStep;
 import com.bitwig.extension.controller.api.PinnableCursorClip;
 import com.bitwig.extension.controller.api.SettableBooleanValue;
 import com.bitwig.extension.controller.api.Track;
@@ -49,7 +51,9 @@ class BitwigClipWriterTest {
         for (int t = 0; t < TRACK_COUNT; t++) {
             PinnableCursorClip clip = mock(PinnableCursorClip.class);
             BooleanValue existsValue = mock(BooleanValue.class);
+            NoteStep noteStep = mock(NoteStep.class);
             when(clip.exists()).thenReturn(existsValue);
+            when(clip.getStep(anyInt(), anyInt(), anyInt())).thenReturn(noteStep);
             when(existsValue.get()).thenReturn(false);
 
             // Capture the callback so tests can fire exists=true/false manually.
@@ -102,7 +106,7 @@ class BitwigClipWriterTest {
 
         for (int targetTrack = 0; targetTrack < TRACK_COUNT; targetTrack++) {
             // Reset call counts.
-            for (PinnableCursorClip c : clips) reset(c);
+            for (PinnableCursorClip c : clips) clearInvocations(c);
 
             writer.writeStep(targetTrack, 0, true, stepState);
 
@@ -124,7 +128,7 @@ class BitwigClipWriterTest {
         StepState stepState = new StepState();
 
         for (int targetTrack = 0; targetTrack < TRACK_COUNT; targetTrack++) {
-            for (PinnableCursorClip c : clips) reset(c);
+            for (PinnableCursorClip c : clips) clearInvocations(c);
 
             writer.writeStep(targetTrack, 3, false, stepState);
 
@@ -151,7 +155,9 @@ class BitwigClipWriterTest {
         for (int t = 0; t < TRACK_COUNT; t++) {
             PinnableCursorClip clip = mock(PinnableCursorClip.class);
             BooleanValue existsValue = mock(BooleanValue.class);
+            NoteStep noteStep = mock(NoteStep.class);
             when(clip.exists()).thenReturn(existsValue);
+            when(clip.getStep(anyInt(), anyInt(), anyInt())).thenReturn(noteStep);
             final int idx = t;
             doAnswer(inv -> {
                 freshCallbacks[idx] = inv.getArgument(0);
@@ -195,7 +201,9 @@ class BitwigClipWriterTest {
         for (int t = 0; t < TRACK_COUNT; t++) {
             PinnableCursorClip clip = mock(PinnableCursorClip.class);
             BooleanValue existsValue = mock(BooleanValue.class);
+            NoteStep noteStep = mock(NoteStep.class);
             when(clip.exists()).thenReturn(existsValue);
+            when(clip.getStep(anyInt(), anyInt(), anyInt())).thenReturn(noteStep);
 
             boolean trackIsReady = t == 1;
             when(existsValue.get()).thenReturn(trackIsReady);
@@ -267,5 +275,25 @@ class BitwigClipWriterTest {
 
         muteCallbacks[3].valueChanged(false);
         assertFalse(writer.isTrackMuted(3));
+    }
+
+    @Test
+    void write_step_parameters_sets_notestep_fields() {
+        NoteStep noteStep = mock(NoteStep.class);
+        when(clips[0].getStep(anyInt(), anyInt(), anyInt())).thenReturn(noteStep);
+
+        writer.writeStepParameters(0, 2, 60, 0.8, 0.25, 0.5, 4, -0.5,
+                NoteOccurrence.FIRST, 4, 0b0001);
+
+        verify(noteStep).setVelocity(0.8);
+        verify(noteStep).setDuration(0.25);
+        verify(noteStep).setChance(0.5);
+        verify(noteStep).setIsChanceEnabled(true);
+        verify(noteStep).setRepeatCount(4);
+        verify(noteStep).setRepeatVelocityEnd(-0.5);
+        verify(noteStep).setOccurrence(NoteOccurrence.FIRST);
+        verify(noteStep).setIsOccurrenceEnabled(true);
+        verify(noteStep).setRecurrence(4, 0b0001);
+        verify(noteStep).setIsRecurrenceEnabled(true);
     }
 }

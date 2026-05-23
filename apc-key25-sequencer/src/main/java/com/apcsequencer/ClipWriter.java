@@ -1,5 +1,7 @@
 package com.apcsequencer;
 
+import com.bitwig.extension.controller.api.NoteOccurrence;
+
 /**
  * Abstraction over the Bitwig {@code CursorClip} API for writing step data.
  *
@@ -28,6 +30,33 @@ public interface ClipWriter {
      * @param stepState full per-step parameters (pitch, velocity, gate length …)
      */
     void writeStep(int track, int step, boolean active, StepState stepState);
+
+    /**
+     * Applies per-step NoteStep parameters that are not encoded in setStep/clearStep.
+     *
+     * @param track      0-based track index (0–4)
+     * @param step       0-based step column index (0–7)
+     * @param pitch      MIDI note for locating the NoteStep (0–127)
+     * @param velocity   normalized velocity 0..1
+     * @param duration   note duration in beats
+     * @param chance     probability 0..1
+     * @param repeatCount repeat count value
+     * @param repeatVelocityEnd repeat velocity end -1..1
+     * @param occurrence note occurrence condition
+     * @param recurrenceLength recurrence cycle length
+     * @param recurrenceMask recurrence bit-mask
+     */
+    void writeStepParameters(int track,
+                             int step,
+                             int pitch,
+                             double velocity,
+                             double duration,
+                             double chance,
+                             int repeatCount,
+                             double repeatVelocityEnd,
+                             NoteOccurrence occurrence,
+                             int recurrenceLength,
+                             int recurrenceMask);
 
     /**
      * Toggles play/stop for a track's active Sequence Slot.

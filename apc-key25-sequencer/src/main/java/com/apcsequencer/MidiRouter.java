@@ -58,10 +58,10 @@ public final class MidiRouter {
             return;
         }
 
-        // 3. Try knob (stub — routed in a later slice)
+        // 3. Try knob
         KnobEvent knob = MidiDecoder.decodeKnob(status, data1, data2);
         if (knob != null) {
-            // TODO: route to knob handler with modifier context
+            dispatcher.dispatch(tracker.handleKnob(knob));
             return;
         }
 
