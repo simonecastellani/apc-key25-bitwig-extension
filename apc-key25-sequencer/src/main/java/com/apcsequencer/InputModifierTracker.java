@@ -133,6 +133,30 @@ public final class InputModifierTracker {
             return new SetPanHeldGesture(event.pressed());
         }
 
+        if (id == ButtonId.SEND) {
+            if (event.pressed()) {
+                heldModifiers.add(ButtonId.SEND);
+                if (heldPadTrack >= 0 && heldPadStep >= 0) {
+                    pendingTapToggle = false;
+                }
+            } else {
+                heldModifiers.remove(ButtonId.SEND);
+            }
+            return new SetSendHeldGesture(event.pressed());
+        }
+
+        if (id == ButtonId.DEVICE) {
+            if (event.pressed()) {
+                heldModifiers.add(ButtonId.DEVICE);
+                if (heldPadTrack >= 0 && heldPadStep >= 0) {
+                    pendingTapToggle = false;
+                }
+            } else {
+                heldModifiers.remove(ButtonId.DEVICE);
+            }
+            return new SetDeviceHeldGesture(event.pressed());
+        }
+
         if (event.pressed() && heldModifiers.contains(ButtonId.VOLUME)) {
             int sceneTrack = sceneLaunchTrack(id);
             if (sceneTrack >= 0) {
@@ -249,7 +273,18 @@ public final class InputModifierTracker {
             return new PerStepKnobTurnGesture(heldPadTrack, heldPadStep, parameter, event.delta());
         }
 
-        if (event.knob() < 0 || event.knob() >= SequencerState.TRACK_COUNT || event.delta() == 0) {
+        if (event.delta() == 0) {
+            return null;
+        }
+
+        if (heldModifiers.contains(ButtonId.DEVICE)) {
+            return new DeviceMacroTurnGesture(event.knob(), event.delta());
+        }
+        if (heldModifiers.contains(ButtonId.SEND)) {
+            return new SendLevelTurnGesture(event.knob(), event.delta());
+        }
+
+        if (event.knob() < 0 || event.knob() >= SequencerState.TRACK_COUNT) {
             return null;
         }
 
