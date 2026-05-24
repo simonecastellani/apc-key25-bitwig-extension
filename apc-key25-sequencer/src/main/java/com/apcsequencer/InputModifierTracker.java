@@ -52,6 +52,7 @@ public final class InputModifierTracker {
     private boolean sequenceBankClearMode = false;
     private boolean copyOverlayActive = false;
     private boolean clearOverlayActive = false;
+    private boolean liveRecordActive = false;
 
     // -----------------------------------------------------------------------
     // Public API
@@ -245,6 +246,11 @@ public final class InputModifierTracker {
             }
         }
 
+        if (id == ButtonId.STOP_ALL_CLIPS && event.pressed() && heldModifiers.contains(ButtonId.SHIFT)) {
+            liveRecordActive = !liveRecordActive;
+            return new SetLiveRecordModeGesture(liveRecordActive);
+        }
+
         if (event.pressed() && !isAnyModifierHeld()) {
             if (id == ButtonId.PLAY_PAUSE) {
                 return new ToggleTransportGesture();
@@ -308,8 +314,13 @@ public final class InputModifierTracker {
      * no gesture.</p>
      */
     public Gesture handleKeyboard(KeyboardNoteEvent event) {
-        if (!event.pressed()) return null;
-        if (heldPadTrack < 0 || heldPadStep < 0) return null;
+        if (!event.pressed()) {
+            if (heldPadTrack >= 0 && heldPadStep >= 0) {
+                return null;
+            }
+            return new KeyboardLiveRecordGesture(event);
+        }
+        if (heldPadTrack < 0 || heldPadStep < 0) return new KeyboardLiveRecordGesture(event);
 
         // Holding pad + keyboard means pitch assignment intent, not tap-toggle.
         pendingTapToggle = false;

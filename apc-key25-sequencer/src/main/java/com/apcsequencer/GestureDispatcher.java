@@ -5,6 +5,9 @@ import com.bitwig.extension.controller.api.ControllerHost;
 import com.bitwig.extension.controller.api.MidiOut;
 import com.bitwig.extension.controller.api.Transport;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /**
  * Dispatches high-level {@link Gesture} objects to the appropriate subsystems:
  * <ol>
@@ -21,6 +24,7 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
     private static final int SCENE_LAUNCH_NOTE_BASE = 0x52;
     private static final int PLAY_PAUSE_NOTE = 0x5B;
     private static final int REC_NOTE = 0x5D;
+    private static final int STOP_ALL_CLIPS_NOTE = 0x51;
     private static final int VOLUME_NOTE = 0x44;
     private static final int PAN_NOTE = 0x45;
     private static final int SEND_NOTE = 0x46;
@@ -45,6 +49,9 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
     private boolean panHeld;
     private boolean sendHeld;
     private boolean deviceHeld;
+    private final Map<Integer, KeyboardLiveRecordNote> pendingLiveRecordNotes = new HashMap<>();
+
+    private record KeyboardLiveRecordNote(int pitch, int velocity, double noteOnTimestampBeats) {}
 
     public GestureDispatcher(SequencerState state,
                              ClipWriter clipWriter,
@@ -186,6 +193,14 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
             transport.togglePlay();
         } else if (gesture instanceof StopAllGesture) {
             clipWriter.stopAllTrackClips();
+        } else if (gesture instanceof SetLiveRecordModeGesture g) {
+            overlayController.setLiveRecordActive(g.active());
+            if (!overlayController.isLiveRecordActive()) {
+                pendingLiveRecordNotes.clear();
+            }
+            flushLeds();
+        } else if (gesture instanceof KeyboardLiveRecordGesture g) {
+            handleKeyboardLiveRecord(g.event());
         } else if (gesture instanceof ToggleTrackMuteGesture g) {
             clipWriter.toggleTrackMute(g.track());
         } else if (gesture instanceof PerStepKnobTurnGesture g) {
@@ -275,6 +290,8 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
         midiOut.sendMidi(0x90, PLAY_PAUSE_NOTE, transportPlaying ? LedRenderer.GREEN : LedRenderer.OFF);
         boolean sequenceBank = overlayController.getMode() == OverlayMode.SEQUENCE_BANK;
         midiOut.sendMidi(0x90, REC_NOTE, sequenceBank ? LedRenderer.YELLOW : LedRenderer.OFF);
+        midiOut.sendMidi(0x90, STOP_ALL_CLIPS_NOTE,
+                overlayController.isLiveRecordActive() ? LedRenderer.RED : LedRenderer.OFF);
         boolean scaleSelection = overlayController.getMode() == OverlayMode.SCALE_SELECTION;
         midiOut.sendMidi(0x90, VOLUME_NOTE,
                 (volumeHeld || scaleSelection) ? LedRenderer.YELLOW : LedRenderer.OFF);
@@ -499,6 +516,40 @@ public final class GestureDispatcher implements ClipWriter.PlaybackStateListener
         } else {
             clipWriter.applyTrackTiming(g.track());
         }
+        flushLeds();
+    }
+
+    private void handleKeyboardLiveRecord(KeyboardNoteEvent event) {
+        if (!overlayController.isLiveRecordActive()) {
+            return;
+        }
+
+        if (event.pressed()) {
+            pendingLiveRecordNotes.put(event.pitch(),
+                    new KeyboardLiveRecordNote(event.pitch(), event.velocity(), event.timestampBeats()));
+            return;
+        }
+
+        KeyboardLiveRecordNote note = pendingLiveRecordNotes.remove(event.pitch());
+        if (note == null || Double.isNaN(note.noteOnTimestampBeats())) {
+            return;
+        }
+
+        int track = state.getFocusedTrack();
+        TrackState trackState = state.getTrack(track);
+        double stepDuration = trackState.getStepDuration().beatTime();
+        if (stepDuration <= 0.0) {
+            return;
+        }
+        int loopEndPoint = trackState.getLoopEndPoint();
+        int nearestStep = Math.floorMod((int) Math.round(note.noteOnTimestampBeats() / stepDuration), loopEndPoint);
+
+        state.setStepActive(track, nearestStep, true);
+        state.setStepPitch(track, nearestStep, note.pitch());
+        state.setStepVelocity(track, nearestStep, note.velocity());
+
+        StepState step = state.getStep(track, nearestStep);
+        clipWriter.writeStep(track, nearestStep, true, step);
         flushLeds();
     }
 

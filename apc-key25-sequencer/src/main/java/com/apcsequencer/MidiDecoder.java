@@ -92,9 +92,17 @@ public final class MidiDecoder {
      * Returns {@code null} if not a keyboard event.
      */
     public static KeyboardNoteEvent decodeKeyboard(int status, int data1, int data2) {
+        return decodeKeyboard(status, data1, data2, Double.NaN);
+    }
+
+    /**
+     * Decodes a keyboard note event (channel 2, status 0x91/0x81) with event timestamp in beats.
+     * Returns {@code null} if not a keyboard event.
+     */
+    public static KeyboardNoteEvent decodeKeyboard(int status, int data1, int data2, double timestampBeats) {
         if (status != 0x91 && status != 0x81) return null;
         boolean pressed = (status == 0x91) && data2 > 0;
-        return new KeyboardNoteEvent(data1, data2, pressed);
+        return new KeyboardNoteEvent(data1, data2, pressed, timestampBeats);
     }
 
     // -----------------------------------------------------------------------
