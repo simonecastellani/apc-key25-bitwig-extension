@@ -134,4 +134,14 @@ class MidiDecoderTest {
         KnobEvent evt = MidiDecoder.decodeKnob(0xb0, 0x10, 0x40);
         assertNull(evt, "CC 0x10 is not a knob");
     }
+
+    @Test
+    void keyboard_note_on_preserves_timestamp() {
+        KeyboardNoteEvent evt = MidiDecoder.decodeKeyboard(0x91, 60, 100, 3.25);
+        assertNotNull(evt);
+        assertEquals(60, evt.pitch());
+        assertEquals(100, evt.velocity());
+        assertTrue(evt.pressed());
+        assertEquals(3.25, evt.timestampBeats(), 1e-9);
+    }
 }

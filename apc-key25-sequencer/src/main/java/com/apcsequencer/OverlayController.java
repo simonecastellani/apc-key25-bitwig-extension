@@ -11,6 +11,7 @@ public final class OverlayController {
 
     private OverlayMode currentMode = OverlayMode.NORMAL;
     private boolean sequenceBankClearMode;
+    private boolean liveRecordActive;
     private Integer copySourceTrack;
     private Integer copySourceStep;
     private Integer copySourceSceneTrack;
@@ -23,6 +24,11 @@ public final class OverlayController {
     /** True when Sequence Bank overlay is in clear mode (Shift + Rec). */
     public boolean isSequenceBankClearMode() {
         return sequenceBankClearMode;
+    }
+
+    /** True when Live Record mode is active. */
+    public boolean isLiveRecordActive() {
+        return liveRecordActive;
     }
 
     // ------------------------------------------------------------------
@@ -92,6 +98,11 @@ public final class OverlayController {
         currentMode = OverlayMode.NORMAL;
         sequenceBankClearMode = false;
         clearCopySelection();
+    }
+
+    /** Toggles Live Record mode flag. */
+    public void setLiveRecordActive(boolean active) {
+        liveRecordActive = active;
     }
 
     private void clearCopySelection() {

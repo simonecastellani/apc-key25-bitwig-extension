@@ -212,7 +212,7 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
         }
 
         InputModifierTracker tracker = new InputModifierTracker();
-        new MidiRouter(allIn, tracker, dispatcher);
+        new MidiRouter(allIn, tracker, dispatcher, host.createTransport());
 
         DocumentState documentState = host.getDocumentState();
         SettableEnumValue scaleRootSetting = documentState.getEnumSetting(

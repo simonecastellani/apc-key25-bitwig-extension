@@ -191,7 +191,7 @@ class InputModifierTrackerTest {
 
         Gesture g = tracker.handleKeyboard(new KeyboardNoteEvent(64, 127, true));
 
-        assertNull(g);
+        assertInstanceOf(KeyboardLiveRecordGesture.class, g);
     }
 
     @Test
@@ -216,7 +216,7 @@ class InputModifierTrackerTest {
         tracker.handlePad(new PadEvent(1, 3, false));
         Gesture g = tracker.handleKeyboard(new KeyboardNoteEvent(64, 127, true));
 
-        assertNull(g);
+        assertInstanceOf(KeyboardLiveRecordGesture.class, g);
     }
 
     @Test
@@ -663,5 +663,19 @@ class InputModifierTrackerTest {
 
         assertInstanceOf(ClearTrackGesture.class, g);
         assertEquals(3, ((ClearTrackGesture) g).track());
+    }
+
+    @Test
+    void shift_plus_stop_all_clips_toggles_live_record_mode() {
+        InputModifierTracker tracker = new InputModifierTracker();
+        tracker.handleButton(new ButtonEvent(ButtonId.SHIFT, true));
+
+        Gesture on = tracker.handleButton(new ButtonEvent(ButtonId.STOP_ALL_CLIPS, true));
+        Gesture off = tracker.handleButton(new ButtonEvent(ButtonId.STOP_ALL_CLIPS, true));
+
+        assertInstanceOf(SetLiveRecordModeGesture.class, on);
+        assertTrue(((SetLiveRecordModeGesture) on).active());
+        assertInstanceOf(SetLiveRecordModeGesture.class, off);
+        assertFalse(((SetLiveRecordModeGesture) off).active());
     }
 }

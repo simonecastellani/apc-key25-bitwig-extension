@@ -1093,4 +1093,117 @@ class GestureDispatcherTest {
         assertTrue(state.getStep(0, 0).isActive());
         verify(clipWriter).writeStep(eq(0), eq(0), eq(true), any(StepState.class));
     }
+
+    @Test
+    void live_record_mode_toggles_stop_all_clips_led_red_on_and_off() {
+        SequencerState state = new SequencerState();
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new SetLiveRecordModeGesture(true));
+        verify(midiOut).sendMidi(0x90, 0x51, LedRenderer.RED);
+
+        reset(midiOut);
+        dispatcher.dispatch(new SetLiveRecordModeGesture(false));
+        verify(midiOut).sendMidi(0x90, 0x51, LedRenderer.OFF);
+    }
+
+    @Test
+    void keyboard_note_is_captured_on_note_off_into_nearest_step_of_focused_track() {
+        SequencerState state = new SequencerState();
+        state.setFocusedTrack(2);
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new SetLiveRecordModeGesture(true));
+        dispatcher.dispatch(new KeyboardLiveRecordGesture(new KeyboardNoteEvent(67, 104, true, 0.74)));
+        verify(clipWriter, never()).writeStep(anyInt(), anyInt(), anyBoolean(), any(StepState.class));
+
+        dispatcher.dispatch(new KeyboardLiveRecordGesture(new KeyboardNoteEvent(67, 0, false, 0.80)));
+
+        assertTrue(state.getStep(2, 3).isActive());
+        assertEquals(67, state.getStep(2, 3).getPitch());
+        assertEquals(104, state.getStep(2, 3).getVelocity());
+        verify(clipWriter).writeStep(eq(2), eq(3), eq(true), any(StepState.class));
+    }
+
+    @Test
+    void two_close_keyboard_notes_land_on_different_steps() {
+        SequencerState state = new SequencerState();
+        state.setFocusedTrack(1);
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new SetLiveRecordModeGesture(true));
+        dispatcher.dispatch(new KeyboardLiveRecordGesture(new KeyboardNoteEvent(60, 90, true, 0.10)));
+        dispatcher.dispatch(new KeyboardLiveRecordGesture(new KeyboardNoteEvent(62, 95, true, 0.36)));
+        dispatcher.dispatch(new KeyboardLiveRecordGesture(new KeyboardNoteEvent(60, 0, false, 0.20)));
+        dispatcher.dispatch(new KeyboardLiveRecordGesture(new KeyboardNoteEvent(62, 0, false, 0.45)));
+
+        assertTrue(state.getStep(1, 0).isActive());
+        assertTrue(state.getStep(1, 1).isActive());
+        verify(clipWriter).writeStep(eq(1), eq(0), eq(true), any(StepState.class));
+        verify(clipWriter).writeStep(eq(1), eq(1), eq(true), any(StepState.class));
+    }
+
+    @Test
+    void keyboard_capture_updates_existing_active_step_without_deactivating_it() {
+        SequencerState state = new SequencerState();
+        state.setFocusedTrack(0);
+        state.setStepActive(0, 2, true);
+        state.setStepPitch(0, 2, 60);
+        state.setStepVelocity(0, 2, 100);
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new SetLiveRecordModeGesture(true));
+        dispatcher.dispatch(new KeyboardLiveRecordGesture(new KeyboardNoteEvent(72, 111, true, 0.51)));
+        dispatcher.dispatch(new KeyboardLiveRecordGesture(new KeyboardNoteEvent(72, 0, false, 0.70)));
+
+        assertTrue(state.getStep(0, 2).isActive());
+        assertEquals(72, state.getStep(0, 2).getPitch());
+        assertEquals(111, state.getStep(0, 2).getVelocity());
+        verify(clipWriter).writeStep(eq(0), eq(2), eq(true), any(StepState.class));
+    }
+
+    @Test
+    void keyboard_notes_are_not_captured_when_live_record_mode_is_off() {
+        SequencerState state = new SequencerState();
+        state.setFocusedTrack(4);
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new KeyboardLiveRecordGesture(new KeyboardNoteEvent(64, 100, true, 0.33)));
+        dispatcher.dispatch(new KeyboardLiveRecordGesture(new KeyboardNoteEvent(64, 0, false, 0.50)));
+
+        verify(clipWriter, never()).writeStep(anyInt(), anyInt(), anyBoolean(), any(StepState.class));
+    }
+
+    @Test
+    void live_record_quantization_uses_current_step_duration() {
+        SequencerState state = new SequencerState();
+        state.setFocusedTrack(3);
+        state.setStepDuration(3, StepDuration.S32);
+        ClipWriter clipWriter = mock(ClipWriter.class);
+        MidiOut midiOut = mock(MidiOut.class);
+        GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, midiOut, hostContext.host);
+
+        dispatcher.dispatch(new SetLiveRecordModeGesture(true));
+        dispatcher.dispatch(new KeyboardLiveRecordGesture(new KeyboardNoteEvent(70, 90, true, 0.35)));
+        dispatcher.dispatch(new KeyboardLiveRecordGesture(new KeyboardNoteEvent(70, 0, false, 0.40)));
+
+        state.setStepDuration(3, StepDuration.S8);
+        dispatcher.dispatch(new KeyboardLiveRecordGesture(new KeyboardNoteEvent(71, 95, true, 0.35)));
+        dispatcher.dispatch(new KeyboardLiveRecordGesture(new KeyboardNoteEvent(71, 0, false, 0.60)));
+
+        assertTrue(state.getStep(3, 3).isActive());
+        assertTrue(state.getStep(3, 1).isActive());
+        verify(clipWriter).writeStep(eq(3), eq(3), eq(true), any(StepState.class));
+        verify(clipWriter).writeStep(eq(3), eq(1), eq(true), any(StepState.class));
+    }
 }
