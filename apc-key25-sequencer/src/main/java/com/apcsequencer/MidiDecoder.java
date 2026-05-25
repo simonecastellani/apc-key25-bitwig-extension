@@ -72,7 +72,19 @@ public final class MidiDecoder {
     public static KnobEvent decodeKnob(int status, int data1, int data2) {
         if ((status & 0xF0) != 0xB0) return null;
         if (data1 < 0x30 || data1 > 0x37) return null;
-        return new KnobEvent(data1 - 0x30, data2);
+        return new KnobEvent(data1 - 0x30, decodeRelativeDelta(data2));
+    }
+
+    private static int decodeRelativeDelta(int value) {
+        // APC Key 25 MK1 knob stream commonly reports binary-offset values:
+        // 0x7f for clockwise, 0x00 for counter-clockwise.
+        if (value == 0x7f) return 1;
+        if (value == 0x00) return -1;
+        if (value == 0x40) return 0;
+
+        // Fallback: two's-complement style relative encoder values.
+        if (value < 0x40) return value;
+        return -(0x80 - value);
     }
 
     /**
@@ -80,9 +92,17 @@ public final class MidiDecoder {
      * Returns {@code null} if not a keyboard event.
      */
     public static KeyboardNoteEvent decodeKeyboard(int status, int data1, int data2) {
+        return decodeKeyboard(status, data1, data2, Double.NaN);
+    }
+
+    /**
+     * Decodes a keyboard note event (channel 2, status 0x91/0x81) with event timestamp in beats.
+     * Returns {@code null} if not a keyboard event.
+     */
+    public static KeyboardNoteEvent decodeKeyboard(int status, int data1, int data2, double timestampBeats) {
         if (status != 0x91 && status != 0x81) return null;
         boolean pressed = (status == 0x91) && data2 > 0;
-        return new KeyboardNoteEvent(data1, data2, pressed);
+        return new KeyboardNoteEvent(data1, data2, pressed, timestampBeats);
     }
 
     // -----------------------------------------------------------------------

@@ -126,6 +126,75 @@ public final class SequencerState {
         return StateDiff.builder().addStepChange(trackIndex, stepIndex).build();
     }
 
+    /**
+     * Resets one step to Clear mode defaults.
+     *
+     * <p>Defaults for Clear mode differ from fresh state defaults for gate length:
+     * clear resets gate length to 100% (1.0).</p>
+     */
+    public StateDiff clearStep(int trackIndex, int stepIndex) {
+        StepState step = tracks[trackIndex].getStep(stepIndex);
+        StepState before = step.copy();
+
+        step.setActive(false);
+        step.setPitch(60);
+        step.setVelocity(100);
+        step.setGateLength(1.0);
+        step.setProbability(1.0);
+        step.setChordVoicing(ChordVoicing.ROOT_ONLY);
+        step.setScaleDegreeOffset(0);
+        step.setRatchetCount(1);
+        step.setRatchetDecay(0.0);
+        step.setStepCondition(StepCondition.ALWAYS);
+
+        if (sameStep(before, step)) {
+            return StateDiff.builder().build();
+        }
+        return StateDiff.builder().addStepChange(trackIndex, stepIndex).build();
+    }
+
+    /**
+     * Resets all 8 steps of one track to Clear mode defaults.
+     */
+    public StateDiff clearTrackSteps(int trackIndex) {
+        StateDiff.Builder builder = StateDiff.builder();
+        for (int step = 0; step < TrackState.STEP_COUNT; step++) {
+            StateDiff diff = clearStep(trackIndex, step);
+            if (!diff.isEmpty()) {
+                builder.addStepChange(trackIndex, step);
+            }
+        }
+        return builder.build();
+    }
+
+    /**
+     * Copies all step parameters from one step to another.
+     */
+    public StateDiff copyStep(int sourceTrack,
+                              int sourceStep,
+                              int destinationTrack,
+                              int destinationStep) {
+        StepState source = tracks[sourceTrack].getStep(sourceStep);
+        StepState destination = tracks[destinationTrack].getStep(destinationStep);
+
+        StepState before = destination.copy();
+        destination.setActive(source.isActive());
+        destination.setPitch(source.getPitch());
+        destination.setVelocity(source.getVelocity());
+        destination.setGateLength(source.getGateLength());
+        destination.setProbability(source.getProbability());
+        destination.setChordVoicing(source.getChordVoicing());
+        destination.setScaleDegreeOffset(source.getScaleDegreeOffset());
+        destination.setRatchetCount(source.getRatchetCount());
+        destination.setRatchetDecay(source.getRatchetDecay());
+        destination.setStepCondition(source.getStepCondition());
+
+        if (sameStep(before, destination)) {
+            return StateDiff.builder().build();
+        }
+        return StateDiff.builder().addStepChange(destinationTrack, destinationStep).build();
+    }
+
     // -------------------------------------------------------------------
     // Track-level mutations
     // -------------------------------------------------------------------
@@ -135,10 +204,117 @@ public final class SequencerState {
      * Returns an empty diff if the clamped value equals the current value.
      */
     public StateDiff setLoopEndPoint(int trackIndex, int value) {
-        int before = tracks[trackIndex].getLoopEndPoint();
-        int after  = tracks[trackIndex].setLoopEndPoint(value);
+        TrackState track = tracks[trackIndex];
+        int before = track.getLoopEndPoint();
+        int after  = track.setLoopEndPoint(value);
+        int maxRotation = Math.max(0, after - 1);
+        if (track.getPatternRotation() > maxRotation) {
+            track.setPatternRotation(maxRotation);
+        }
+        if (track.getEuclideanDistribution() > after) {
+            track.setEuclideanDistribution(after);
+        }
         if (before == after) return StateDiff.builder().build();
-        return StateDiff.builder().build(); // track-level change; no step diff needed for now
+        return StateDiff.builder().addStepChange(trackIndex, after - 1).build();
+    }
+
+    /**
+     * Sets Step Duration for the given track.
+     * Returns an empty diff if unchanged.
+     */
+    public StateDiff setStepDuration(int trackIndex, StepDuration stepDuration) {
+        TrackState track = tracks[trackIndex];
+        if (track.getStepDuration() == stepDuration) return StateDiff.builder().build();
+        track.setStepDuration(stepDuration);
+        return StateDiff.builder().addStepChange(trackIndex, 0).build();
+    }
+
+    public StateDiff setPatternRotation(int trackIndex, int patternRotation) {
+        TrackState track = tracks[trackIndex];
+        int max = Math.max(0, track.getLoopEndPoint() - 1);
+        int clamped = Math.max(0, Math.min(max, patternRotation));
+        if (track.getPatternRotation() == clamped) return StateDiff.builder().build();
+        track.setPatternRotation(clamped);
+        return StateDiff.builder().addStepChange(trackIndex, 0).build();
+    }
+
+    public StateDiff setSwing(int trackIndex, int swing) {
+        int clamped = Math.max(50, Math.min(75, swing));
+        TrackState track = tracks[trackIndex];
+        if (track.getSwing() == clamped) return StateDiff.builder().build();
+        track.setSwing(clamped);
+        return StateDiff.builder().addStepChange(trackIndex, 0).build();
+    }
+
+    public StateDiff setTranspose(int trackIndex, int transpose) {
+        int clamped = Math.max(-12, Math.min(12, transpose));
+        TrackState track = tracks[trackIndex];
+        if (track.getTranspose() == clamped) return StateDiff.builder().build();
+        track.setTranspose(clamped);
+        return StateDiff.builder().addStepChange(trackIndex, 0).build();
+    }
+
+    public StateDiff setTrackProbability(int trackIndex, double probability) {
+        double clamped = Math.max(0.0, Math.min(1.0, probability));
+        TrackState track = tracks[trackIndex];
+        if (Double.compare(track.getTrackProbability(), clamped) == 0) return StateDiff.builder().build();
+        track.setTrackProbability(clamped);
+        return StateDiff.builder().addStepChange(trackIndex, 0).build();
+    }
+
+    public StateDiff setStaticPan(int trackIndex, double pan) {
+        double clamped = Math.max(-1.0, Math.min(1.0, pan));
+        TrackState track = tracks[trackIndex];
+        if (Double.compare(track.getStaticPan(), clamped) == 0) return StateDiff.builder().build();
+        track.setStaticPan(clamped);
+        return StateDiff.builder().addStepChange(trackIndex, 0).build();
+    }
+
+    public StateDiff setVelocitySpread(int trackIndex, double amount) {
+        double clamped = Math.max(0.0, Math.min(1.0, amount));
+        TrackState track = tracks[trackIndex];
+        if (Double.compare(track.getVelocitySpread(), clamped) == 0) return StateDiff.builder().build();
+        track.setVelocitySpread(clamped);
+        return StateDiff.builder().addStepChange(trackIndex, 0).build();
+    }
+
+    public StateDiff setLoopMultiplier(int trackIndex, LoopMultiplier loopMultiplier) {
+        TrackState track = tracks[trackIndex];
+        if (track.getLoopMultiplier() == loopMultiplier) return StateDiff.builder().build();
+        track.setLoopMultiplier(loopMultiplier);
+        return StateDiff.builder().addStepChange(trackIndex, 0).build();
+    }
+
+    public StateDiff setPhaseOffset(int trackIndex, double phaseOffset) {
+        double clamped = Math.max(0.0, Math.min(1.0, phaseOffset));
+        TrackState track = tracks[trackIndex];
+        if (Double.compare(track.getPhaseOffset(), clamped) == 0) return StateDiff.builder().build();
+        track.setPhaseOffset(clamped);
+        return StateDiff.builder().addStepChange(trackIndex, 0).build();
+    }
+
+    public StateDiff setEuclideanDistribution(int trackIndex, int pulses) {
+        TrackState track = tracks[trackIndex];
+        int loopEndPoint = track.getLoopEndPoint();
+        int clamped = Math.max(0, Math.min(loopEndPoint, pulses));
+        track.setEuclideanDistribution(clamped);
+
+        boolean[] bitmask = EuclideanBitmask.generate(clamped, loopEndPoint);
+        StateDiff.Builder builder = StateDiff.builder();
+        for (int step = 0; step < loopEndPoint; step++) {
+            StepState stepState = track.getStep(step);
+            boolean next = bitmask[step];
+            if (stepState.isActive() != next) {
+                stepState.setActive(next);
+                builder.addStepChange(trackIndex, step);
+            }
+        }
+
+        StateDiff diff = builder.build();
+        if (!diff.isEmpty()) {
+            return diff;
+        }
+        return StateDiff.builder().build();
     }
 
     /**
@@ -153,6 +329,56 @@ public final class SequencerState {
             b.addStepChange(trackIndex, s);
         }
         return b.build();
+    }
+
+    /** Clears the given slot and marks all steps changed when active slot is cleared. */
+    public StateDiff clearSlot(int trackIndex, int slotIndex) {
+        TrackState track = tracks[trackIndex];
+        boolean activeBefore = track.getActiveSlot() == slotIndex;
+        track.clearSlot(slotIndex);
+        if (!activeBefore) {
+            return StateDiff.builder().build();
+        }
+        StateDiff.Builder b = StateDiff.builder();
+        for (int s = 0; s < TrackState.STEP_COUNT; s++) {
+            b.addStepChange(trackIndex, s);
+        }
+        return b.build();
+    }
+
+    /**
+     * Copies the full current sequence from source track to destination track:
+     * all 8 steps, loop end point and step duration.
+     */
+    public StateDiff copyTrackSequence(int sourceTrack, int destinationTrack) {
+        TrackState source = tracks[sourceTrack];
+        TrackState destination = tracks[destinationTrack];
+
+        destination.setStepDuration(source.getStepDuration());
+        destination.setLoopEndPoint(source.getLoopEndPoint());
+
+        StateDiff.Builder builder = StateDiff.builder();
+        for (int step = 0; step < TrackState.STEP_COUNT; step++) {
+            StepState sourceStep = source.getStep(step);
+            StepState destinationStep = destination.getStep(step);
+            StepState before = destinationStep.copy();
+
+            destinationStep.setActive(sourceStep.isActive());
+            destinationStep.setPitch(sourceStep.getPitch());
+            destinationStep.setVelocity(sourceStep.getVelocity());
+            destinationStep.setGateLength(sourceStep.getGateLength());
+            destinationStep.setProbability(sourceStep.getProbability());
+            destinationStep.setChordVoicing(sourceStep.getChordVoicing());
+            destinationStep.setScaleDegreeOffset(sourceStep.getScaleDegreeOffset());
+            destinationStep.setRatchetCount(sourceStep.getRatchetCount());
+            destinationStep.setRatchetDecay(sourceStep.getRatchetDecay());
+            destinationStep.setStepCondition(sourceStep.getStepCondition());
+
+            if (!sameStep(before, destinationStep)) {
+                builder.addStepChange(destinationTrack, step);
+            }
+        }
+        return builder.build();
     }
 
     // -------------------------------------------------------------------
@@ -171,5 +397,18 @@ public final class SequencerState {
         if (focusedTrack == trackIndex) return StateDiff.builder().build();
         focusedTrack = trackIndex;
         return StateDiff.builder().build();
+    }
+
+    private static boolean sameStep(StepState a, StepState b) {
+        return a.isActive() == b.isActive()
+                && a.getPitch() == b.getPitch()
+                && a.getVelocity() == b.getVelocity()
+                && Double.compare(a.getGateLength(), b.getGateLength()) == 0
+                && Double.compare(a.getProbability(), b.getProbability()) == 0
+                && a.getChordVoicing() == b.getChordVoicing()
+                && a.getScaleDegreeOffset() == b.getScaleDegreeOffset()
+                && a.getRatchetCount() == b.getRatchetCount()
+                && Double.compare(a.getRatchetDecay(), b.getRatchetDecay()) == 0
+                && a.getStepCondition() == b.getStepCondition();
     }
 }

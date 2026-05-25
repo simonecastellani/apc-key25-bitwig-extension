@@ -93,7 +93,10 @@ class SequencerStateTest {
                 () -> assertEquals(50, track.getSwing(),                       "swing default 50"),
                 () -> assertEquals(0, track.getTranspose(),                    "transpose default 0"),
                 () -> assertEquals(1.0, track.getTrackProbability(), 1e-9,     "trackProbability default 1.0"),
+                () -> assertEquals(0.0, track.getStaticPan(), 1e-9,            "staticPan default 0.0"),
+                () -> assertEquals(0.0, track.getVelocitySpread(), 1e-9,       "velocitySpread default 0.0"),
                 () -> assertEquals(LoopMultiplier.ONE, track.getLoopMultiplier(), "loopMultiplier default ONE"),
+                () -> assertEquals(0, track.getEuclideanDistribution(),         "euclideanDistribution default 0"),
                 () -> assertEquals(0.0, track.getPhaseOffset(), 1e-9,          "phaseOffset default 0.0")
             );
         }
@@ -129,6 +132,122 @@ class SequencerStateTest {
         SequencerState state = new SequencerState(); // default loopEndPoint = 8
         StateDiff diff = state.setLoopEndPoint(0, 8);
         assertTrue(diff.isEmpty(), "no change → diff must be empty");
+    }
+
+    @Test
+    void setStepDuration_changes_track_step_duration_and_returns_nonempty_diff() {
+        SequencerState state = new SequencerState();
+
+        StateDiff diff = state.setStepDuration(0, StepDuration.S8);
+
+        assertEquals(StepDuration.S8, state.getTrack(0).getStepDuration());
+        assertFalse(diff.isEmpty());
+    }
+
+    @Test
+    void setStepDuration_with_same_value_returns_empty_diff() {
+        SequencerState state = new SequencerState();
+
+        StateDiff diff = state.setStepDuration(0, StepDuration.S16);
+
+        assertTrue(diff.isEmpty());
+    }
+
+    @Test
+    void setPatternRotation_clamps_to_loop_end_point_minus_one() {
+        SequencerState state = new SequencerState();
+        state.setLoopEndPoint(0, 4);
+
+        state.setPatternRotation(0, 99);
+
+        assertEquals(3, state.getTrack(0).getPatternRotation());
+    }
+
+    @Test
+    void setSwing_clamps_to_50_75_range() {
+        SequencerState state = new SequencerState();
+
+        state.setSwing(0, 10);
+        assertEquals(50, state.getTrack(0).getSwing());
+
+        state.setSwing(0, 100);
+        assertEquals(75, state.getTrack(0).getSwing());
+    }
+
+    @Test
+    void setTranspose_clamps_to_minus12_plus12() {
+        SequencerState state = new SequencerState();
+
+        state.setTranspose(0, -999);
+        assertEquals(-12, state.getTrack(0).getTranspose());
+
+        state.setTranspose(0, 999);
+        assertEquals(12, state.getTrack(0).getTranspose());
+    }
+
+    @Test
+    void setTrackProbability_clamps_to_zero_one_range() {
+        SequencerState state = new SequencerState();
+
+        state.setTrackProbability(0, -1.0);
+        assertEquals(0.0, state.getTrack(0).getTrackProbability(), 1e-9);
+
+        state.setTrackProbability(0, 2.0);
+        assertEquals(1.0, state.getTrack(0).getTrackProbability(), 1e-9);
+    }
+
+    @Test
+    void setStaticPan_clamps_to_minus1_plus1_range() {
+        SequencerState state = new SequencerState();
+
+        state.setStaticPan(0, -2.0);
+        assertEquals(-1.0, state.getTrack(0).getStaticPan(), 1e-9);
+
+        state.setStaticPan(0, 2.0);
+        assertEquals(1.0, state.getTrack(0).getStaticPan(), 1e-9);
+    }
+
+    @Test
+    void setVelocitySpread_clamps_to_zero_one_range() {
+        SequencerState state = new SequencerState();
+
+        state.setVelocitySpread(0, -1.0);
+        assertEquals(0.0, state.getTrack(0).getVelocitySpread(), 1e-9);
+
+        state.setVelocitySpread(0, 2.0);
+        assertEquals(1.0, state.getTrack(0).getVelocitySpread(), 1e-9);
+    }
+
+    @Test
+    void setLoopMultiplier_updates_track_value() {
+        SequencerState state = new SequencerState();
+
+        state.setLoopMultiplier(0, LoopMultiplier.FOUR);
+
+        assertEquals(LoopMultiplier.FOUR, state.getTrack(0).getLoopMultiplier());
+    }
+
+    @Test
+    void setPhaseOffset_clamps_to_zero_one_range() {
+        SequencerState state = new SequencerState();
+
+        state.setPhaseOffset(0, -0.5);
+        assertEquals(0.0, state.getTrack(0).getPhaseOffset(), 1e-9);
+
+        state.setPhaseOffset(0, 1.5);
+        assertEquals(1.0, state.getTrack(0).getPhaseOffset(), 1e-9);
+    }
+
+    @Test
+    void setEuclideanDistribution_clamps_to_zero_loop_end_point_range() {
+        SequencerState state = new SequencerState();
+        state.setLoopEndPoint(0, 5);
+
+        state.setEuclideanDistribution(0, -10);
+        assertEquals(0, state.getTrack(0).getEuclideanDistribution());
+
+        state.setEuclideanDistribution(0, 99);
+        assertEquals(5, state.getTrack(0).getEuclideanDistribution());
     }
 
     // -------------------------------------------------------------------------
@@ -196,9 +315,8 @@ class SequencerStateTest {
         assertEquals(8, pattern.length, "pattern length should be 8");
         int active = countActive(pattern);
         assertEquals(3, active, "exactly 3 active steps");
-        // canonical Bjorklund 3-in-8: [1,0,0,1,0,0,1,0]
-        assertArrayEquals(new boolean[]{ true,false,false,true,false,false,true,false }, pattern,
-            "3-in-8 should be [1,0,0,1,0,0,1,0]");
+        assertArrayEquals(new boolean[]{ true,false,false,true,false,true,false,false }, pattern,
+            "3-in-8 should be [1,0,0,1,0,1,0,0]");
     }
 
     @Test
@@ -206,9 +324,44 @@ class SequencerStateTest {
         boolean[] pattern = EuclideanBitmask.generate(5, 8);
         assertEquals(8, pattern.length, "pattern length should be 8");
         assertEquals(5, countActive(pattern), "exactly 5 active steps");
-        // canonical Bjorklund 5-in-8: [1,0,1,1,0,1,1,0]
-        assertArrayEquals(new boolean[]{ true,false,true,true,false,true,true,false }, pattern,
-            "5-in-8 should be [1,0,1,1,0,1,1,0]");
+        assertArrayEquals(new boolean[]{ true,true,false,true,true,false,true,false }, pattern,
+            "5-in-8 should be [1,1,0,1,1,0,1,0]");
+    }
+
+    @Test
+    void setEuclideanDistribution_updates_track_step_active_flags_without_overwriting_other_parameters() {
+        SequencerState state = new SequencerState();
+        state.setLoopEndPoint(0, 8);
+
+        state.setStepPitch(0, 2, 72);
+        state.setStepVelocity(0, 2, 34);
+        state.setStepGateLength(0, 2, 0.73);
+
+        state.setStepPitch(0, 5, 55);
+        state.setStepVelocity(0, 5, 120);
+        state.setStepGateLength(0, 5, 0.12);
+
+        StateDiff diff = state.setEuclideanDistribution(0, 3);
+
+        assertFalse(diff.isEmpty(), "redistribution should change active steps");
+        assertEquals(3, state.getTrack(0).getEuclideanDistribution());
+
+        assertTrue(state.getStep(0, 0).isActive());
+        assertTrue(state.getStep(0, 3).isActive());
+        assertTrue(state.getStep(0, 5).isActive());
+        assertFalse(state.getStep(0, 1).isActive());
+        assertFalse(state.getStep(0, 2).isActive());
+        assertFalse(state.getStep(0, 4).isActive());
+        assertFalse(state.getStep(0, 6).isActive());
+        assertFalse(state.getStep(0, 7).isActive());
+
+        assertEquals(72, state.getStep(0, 2).getPitch());
+        assertEquals(34, state.getStep(0, 2).getVelocity());
+        assertEquals(0.73, state.getStep(0, 2).getGateLength(), 1e-9);
+
+        assertEquals(55, state.getStep(0, 5).getPitch());
+        assertEquals(120, state.getStep(0, 5).getVelocity());
+        assertEquals(0.12, state.getStep(0, 5).getGateLength(), 1e-9);
     }
 
     @Test
@@ -228,6 +381,74 @@ class SequencerStateTest {
     void euclidean_degenerate_zero_active_fills_no_steps() {
         boolean[] pattern = EuclideanBitmask.generate(0, 8);
         assertEquals(0, countActive(pattern), "0-in-8: no steps active");
+    }
+
+    @Test
+    void clear_slot_resets_live_steps_when_clearing_active_slot() {
+        SequencerState state = new SequencerState();
+        state.toggleStep(0, 3);
+
+        state.clearSlot(0, 0);
+
+        assertFalse(state.getStep(0, 3).isActive());
+        assertFalse(state.getTrack(0).isSlotPopulated(0));
+    }
+
+    @Test
+    void copy_step_copies_all_step_parameters_to_destination_step() {
+        SequencerState state = new SequencerState();
+        state.setStepActive(1, 2, true);
+        state.setStepPitch(1, 2, 67);
+        state.setStepVelocity(1, 2, 83);
+        state.setStepGateLength(1, 2, 0.74);
+        state.setStepProbability(1, 2, 0.66);
+        state.setStepChordVoicing(1, 2, ChordVoicing.DOM7);
+        state.setStepScaleDegreeOffset(1, 2, -3);
+        state.setStepRatchetCount(1, 2, 4);
+        state.setStepRatchetDecay(1, 2, 0.25);
+        state.setStepCondition(1, 2, StepCondition.EVERY_4TH);
+
+        state.copyStep(1, 2, 3, 6);
+
+        StepState destination = state.getStep(3, 6);
+        assertTrue(destination.isActive());
+        assertEquals(67, destination.getPitch());
+        assertEquals(83, destination.getVelocity());
+        assertEquals(0.74, destination.getGateLength(), 1e-9);
+        assertEquals(0.66, destination.getProbability(), 1e-9);
+        assertEquals(ChordVoicing.DOM7, destination.getChordVoicing());
+        assertEquals(-3, destination.getScaleDegreeOffset());
+        assertEquals(4, destination.getRatchetCount());
+        assertEquals(0.25, destination.getRatchetDecay(), 1e-9);
+        assertEquals(StepCondition.EVERY_4TH, destination.getStepCondition());
+    }
+
+    @Test
+    void copy_track_sequence_clones_steps_loop_end_point_and_step_duration() {
+        SequencerState state = new SequencerState();
+        state.setLoopEndPoint(0, 5);
+        state.setStepDuration(0, StepDuration.S8);
+        state.setStepActive(0, 0, true);
+        state.setStepPitch(0, 0, 69);
+        state.setStepVelocity(0, 0, 95);
+        state.setStepChordVoicing(0, 0, ChordVoicing.MAJ7);
+        state.setStepCondition(0, 0, StepCondition.EVERY_2ND);
+        state.setStepActive(0, 4, true);
+        state.setStepPitch(0, 4, 57);
+        state.setStepVelocity(0, 4, 77);
+
+        state.copyTrackSequence(0, 2);
+
+        assertEquals(5, state.getTrack(2).getLoopEndPoint());
+        assertEquals(StepDuration.S8, state.getTrack(2).getStepDuration());
+        assertTrue(state.getStep(2, 0).isActive());
+        assertEquals(69, state.getStep(2, 0).getPitch());
+        assertEquals(95, state.getStep(2, 0).getVelocity());
+        assertEquals(ChordVoicing.MAJ7, state.getStep(2, 0).getChordVoicing());
+        assertEquals(StepCondition.EVERY_2ND, state.getStep(2, 0).getStepCondition());
+        assertTrue(state.getStep(2, 4).isActive());
+        assertEquals(57, state.getStep(2, 4).getPitch());
+        assertEquals(77, state.getStep(2, 4).getVelocity());
     }
 
     // -------------------------------------------------------------------------

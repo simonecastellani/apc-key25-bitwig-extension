@@ -1,5 +1,7 @@
 package com.apcsequencer;
 
+import com.bitwig.extension.controller.api.NoteOccurrence;
+
 /**
  * Abstraction over the Bitwig {@code CursorClip} API for writing step data.
  *
@@ -8,6 +10,12 @@ package com.apcsequencer;
  * In tests a no-op or spy implementation can be substituted.</p>
  */
 public interface ClipWriter {
+
+    interface PlaybackStateListener {
+        void onTrackPlayingChanged(int track, boolean playing);
+
+        void onTrackMutedChanged(int track, boolean muted);
+    }
 
     /**
      * Write the current state of a single step to its Bitwig clip.
@@ -22,4 +30,127 @@ public interface ClipWriter {
      * @param stepState full per-step parameters (pitch, velocity, gate length …)
      */
     void writeStep(int track, int step, boolean active, StepState stepState);
+
+    /**
+     * Applies per-step NoteStep parameters that are not encoded in setStep/clearStep.
+     *
+     * @param track      0-based track index (0–4)
+     * @param step       0-based step column index (0–7)
+     * @param pitch      MIDI note for locating the NoteStep (0–127)
+     * @param velocity   normalized velocity 0..1
+     * @param duration   note duration in beats
+     * @param chance     probability 0..1
+     * @param repeatCount repeat count value
+     * @param repeatVelocityEnd repeat velocity end -1..1
+     * @param occurrence note occurrence condition
+     * @param recurrenceLength recurrence cycle length
+     * @param recurrenceMask recurrence bit-mask
+     * @param transposeSemitones per-note transpose in semitones (-96..96)
+     */
+    void writeStepParameters(int track,
+                             int step,
+                             int pitch,
+                             double velocity,
+                             double duration,
+                             double chance,
+                             int repeatCount,
+                             double repeatVelocityEnd,
+                             NoteOccurrence occurrence,
+                             int recurrenceLength,
+                             int recurrenceMask,
+                             int transposeSemitones);
+
+    /**
+     * Applies track timing (Step Duration + Loop End Point) and rewrites all steps.
+     */
+    void applyTrackTiming(int track);
+
+    /**
+     * Adjusts the active clip's volume for a track.
+     *
+     * @param track 0-based track index (0-4)
+     * @param delta signed knob movement
+     */
+    void adjustTrackClipVolume(int track, int delta);
+
+    /**
+     * Toggles mute on the given track.
+     */
+    void toggleTrackMute(int track);
+
+    /**
+     * Applies static pan to all active NoteSteps in the track's active clip
+     * using the current value in sequencer state.
+     */
+    void applyTrackStaticPan(int track);
+
+    /**
+     * Applies velocity spread to all active NoteSteps in the track's active clip
+     * using the current value in sequencer state.
+     */
+    void applyTrackVelocitySpread(int track);
+
+    /**
+     * Applies a relative increment to the Focused Track instrument macro.
+     *
+     * @param track 0-based focused track index (0-4)
+     * @param macro 0-based macro index (0-7)
+     * @param delta signed relative movement
+     */
+    void adjustFocusedTrackDeviceMacro(int track, int macro, int delta);
+
+    /**
+     * Applies a relative increment to the Focused Track send level.
+     *
+     * @param track 0-based focused track index (0-4)
+     * @param send 0-based send index (0-7)
+     * @param delta signed relative movement
+     */
+    void adjustFocusedTrackSendLevel(int track, int send, int delta);
+
+    /**
+     * Toggles play/stop for a track's active Sequence Slot.
+     */
+    void toggleTrackClipPlayback(int track, int slot);
+
+    /**
+     * Ensures destination Sequence Slot has clip content by copying from source
+     * when destination is empty.
+     */
+    void copySlotIfEmpty(int track, int sourceSlot, int destinationSlot);
+
+    /**
+     * Launches the given Sequence Slot for the track.
+     */
+    void launchSlot(int track, int slot);
+
+    /**
+     * Clears clip content in the given Sequence Slot.
+     */
+    void clearSlot(int track, int slot);
+
+    /**
+     * Returns true when the given Sequence Slot currently has clip content.
+     */
+    boolean isSlotPopulated(int track, int slot);
+
+    /**
+     * Stops clip launcher playback for all sequencer tracks.
+     */
+    void stopAllTrackClips();
+
+    /**
+     * Returns true when any clip is currently playing on the given track.
+     */
+    boolean isTrackPlaying(int track);
+
+    /**
+     * Returns true when the given track is muted.
+     */
+    boolean isTrackMuted(int track);
+
+    /**
+     * Registers a listener for track playback/mute state changes.
+     */
+    void setPlaybackStateListener(PlaybackStateListener listener);
 }

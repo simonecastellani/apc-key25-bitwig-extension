@@ -11,5 +11,18 @@ package com.apcsequencer;
  * this interface in the same package.</p>
  */
 public sealed interface Gesture
-        permits StepToggleGesture, PitchAssignGesture, UndoGesture, RedoGesture {
+        permits StepToggleGesture, PitchAssignGesture, UndoGesture, RedoGesture,
+                LaunchClipGesture, ToggleTransportGesture, StopAllGesture,
+                PerStepKnobTurnGesture, TrackStepDurationTurnGesture,
+                TrackLoopEndPointGesture, PerTrackKnobTurnGesture,
+                ToggleTrackMuteGesture, SetVolumeHeldGesture, SetPanHeldGesture,
+                SetSendHeldGesture, SetDeviceHeldGesture,
+                 DeviceMacroTurnGesture, SendLevelTurnGesture,
+                 ToggleScaleSelectionOverlayGesture, DismissScaleSelectionOverlayGesture,
+                 ScaleSelectionPadGesture,
+                 SetSequenceBankOverlayGesture, SequenceBankPadGesture,
+                 MoveAllTracksSequenceSlotGesture,
+                 SetCopyOverlayGesture, CopyPadGesture, CopyTrackGesture,
+                 SetClearOverlayGesture, ClearPadGesture, ClearTrackGesture,
+                 SetLiveRecordModeGesture, KeyboardLiveRecordGesture {
 }

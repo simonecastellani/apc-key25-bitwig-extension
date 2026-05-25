@@ -46,6 +46,14 @@ public final class InputModifierTracker {
     /** True when current held-pad interaction should emit a tap-toggle on release. */
     private boolean pendingTapToggle = false;
 
+    /** Local mirror of Scale Selection overlay state. */
+    private boolean scaleSelectionOverlayActive = false;
+    private boolean sequenceBankOverlayActive = false;
+    private boolean sequenceBankClearMode = false;
+    private boolean copyOverlayActive = false;
+    private boolean clearOverlayActive = false;
+    private boolean liveRecordActive = false;
+
     // -----------------------------------------------------------------------
     // Public API
     // -----------------------------------------------------------------------
@@ -54,6 +62,37 @@ public final class InputModifierTracker {
      * Process a pad event and return the appropriate gesture, or {@code null}.
      */
     public Gesture handlePad(PadEvent event) {
+        if (clearOverlayActive) {
+            if (event.pressed()) {
+                pendingTapToggle = false;
+                return new ClearPadGesture(event.track(), event.step());
+            }
+            return null;
+        }
+
+        if (copyOverlayActive) {
+            if (event.pressed()) {
+                pendingTapToggle = false;
+                return new CopyPadGesture(event.track(), event.step());
+            }
+            return null;
+        }
+
+        if (sequenceBankOverlayActive) {
+            if (event.pressed()) {
+                pendingTapToggle = false;
+                return new SequenceBankPadGesture(event.track(), event.step());
+            }
+            return null;
+        }
+
+        if (scaleSelectionOverlayActive) {
+            if (event.pressed()) {
+                return new ScaleSelectionPadGesture(event.track(), event.step());
+            }
+            return null;
+        }
+
         if (!event.pressed()) {
             Gesture releaseGesture = null;
 
@@ -68,6 +107,15 @@ public final class InputModifierTracker {
             }
 
             return releaseGesture;
+        }
+
+        int heldSceneTrack = heldSceneLaunchTrack();
+        if (heldSceneTrack >= 0) {
+            if (heldSceneTrack == event.track()) {
+                pendingTapToggle = false;
+                return new TrackLoopEndPointGesture(event.track(), event.step() + 1);
+            }
+            return null;
         }
 
         // Press
@@ -85,6 +133,143 @@ public final class InputModifierTracker {
     public Gesture handleButton(ButtonEvent event) {
         ButtonId id = event.id();
 
+        if (clearOverlayActive && event.pressed()) {
+            int sceneTrack = sceneLaunchTrack(id);
+            if (sceneTrack >= 0) {
+                return new ClearTrackGesture(sceneTrack);
+            }
+        }
+
+        if (id == ButtonId.SUSTAIN && event.pressed() && heldModifiers.contains(ButtonId.SHIFT)) {
+            clearOverlayActive = true;
+            if (heldPadTrack >= 0 && heldPadStep >= 0) {
+                pendingTapToggle = false;
+            }
+            return new SetClearOverlayGesture(true);
+        }
+
+        if (id == ButtonId.SUSTAIN && event.pressed() && !heldModifiers.contains(ButtonId.SHIFT)) {
+            copyOverlayActive = !copyOverlayActive;
+            if (copyOverlayActive) {
+                heldModifiers.add(ButtonId.SUSTAIN);
+            } else {
+                heldModifiers.remove(ButtonId.SUSTAIN);
+            }
+            if (heldPadTrack >= 0 && heldPadStep >= 0) {
+                pendingTapToggle = false;
+            }
+            return new SetCopyOverlayGesture(copyOverlayActive);
+        }
+
+        if (copyOverlayActive && event.pressed()) {
+            int sceneTrack = sceneLaunchTrack(id);
+            if (sceneTrack >= 0) {
+                return new CopyTrackGesture(sceneTrack);
+            }
+        }
+
+        if (id == ButtonId.VOLUME) {
+            if (event.pressed() && heldModifiers.contains(ButtonId.SHIFT)) {
+                heldModifiers.add(ButtonId.VOLUME);
+                scaleSelectionOverlayActive = !scaleSelectionOverlayActive;
+                return new ToggleScaleSelectionOverlayGesture();
+            }
+            if (event.pressed()) {
+                heldModifiers.add(ButtonId.VOLUME);
+                if (heldPadTrack >= 0 && heldPadStep >= 0) {
+                    pendingTapToggle = false;
+                }
+            } else {
+                heldModifiers.remove(ButtonId.VOLUME);
+            }
+            return new SetVolumeHeldGesture(event.pressed());
+        }
+
+        if (id == ButtonId.PAN) {
+            if (event.pressed()) {
+                heldModifiers.add(ButtonId.PAN);
+                if (heldPadTrack >= 0 && heldPadStep >= 0) {
+                    pendingTapToggle = false;
+                }
+            } else {
+                heldModifiers.remove(ButtonId.PAN);
+            }
+            return new SetPanHeldGesture(event.pressed());
+        }
+
+        if (id == ButtonId.SEND) {
+            if (event.pressed()) {
+                heldModifiers.add(ButtonId.SEND);
+                if (heldPadTrack >= 0 && heldPadStep >= 0) {
+                    pendingTapToggle = false;
+                }
+            } else {
+                heldModifiers.remove(ButtonId.SEND);
+            }
+            return new SetSendHeldGesture(event.pressed());
+        }
+
+        if (id == ButtonId.DEVICE) {
+            if (event.pressed()) {
+                heldModifiers.add(ButtonId.DEVICE);
+                if (heldPadTrack >= 0 && heldPadStep >= 0) {
+                    pendingTapToggle = false;
+                }
+            } else {
+                heldModifiers.remove(ButtonId.DEVICE);
+            }
+            return new SetDeviceHeldGesture(event.pressed());
+        }
+
+        if (id == ButtonId.REC) {
+            if (event.pressed()) {
+                sequenceBankOverlayActive = !sequenceBankOverlayActive;
+                sequenceBankClearMode = sequenceBankOverlayActive && heldModifiers.contains(ButtonId.SHIFT);
+                if (sequenceBankOverlayActive) {
+                    heldModifiers.add(ButtonId.REC);
+                } else {
+                    heldModifiers.remove(ButtonId.REC);
+                    sequenceBankClearMode = false;
+                }
+                if (heldPadTrack >= 0 && heldPadStep >= 0) {
+                    pendingTapToggle = false;
+                }
+                return new SetSequenceBankOverlayGesture(sequenceBankOverlayActive, sequenceBankClearMode);
+            }
+            return null;
+        }
+
+        if (event.pressed() && heldModifiers.contains(ButtonId.VOLUME)) {
+            int sceneTrack = sceneLaunchTrack(id);
+            if (sceneTrack >= 0) {
+                return new ToggleTrackMuteGesture(sceneTrack);
+            }
+        }
+
+        if (id == ButtonId.STOP_ALL_CLIPS && event.pressed() && heldModifiers.contains(ButtonId.SHIFT)) {
+            liveRecordActive = !liveRecordActive;
+            return new SetLiveRecordModeGesture(liveRecordActive);
+        }
+
+        if (event.pressed() && !isAnyModifierHeld()) {
+            if (id == ButtonId.PLAY_PAUSE) {
+                return new ToggleTransportGesture();
+            }
+            if (id == ButtonId.STOP_ALL_CLIPS) {
+                return new StopAllGesture();
+            }
+            int sceneTrack = sceneLaunchTrack(id);
+            if (sceneTrack >= 0) {
+                heldModifiers.add(id);
+                return new LaunchClipGesture(sceneTrack);
+            }
+        }
+
+        if (id == ButtonId.SUSTAIN && !event.pressed()) {
+            heldModifiers.remove(ButtonId.SUSTAIN);
+            return null;
+        }
+
         // Update modifier held-set
         if (MODIFIER_BUTTONS.contains(id)) {
             if (event.pressed()) {
@@ -97,6 +282,14 @@ public final class InputModifierTracker {
                 }
             } else {
                 heldModifiers.remove(id);
+                if (id == ButtonId.SHIFT && clearOverlayActive) {
+                    clearOverlayActive = false;
+                    return new SetClearOverlayGesture(false);
+                }
+                if (id == ButtonId.SHIFT && scaleSelectionOverlayActive) {
+                    scaleSelectionOverlayActive = false;
+                    return new DismissScaleSelectionOverlayGesture();
+                }
             }
             return null;
         }
@@ -105,6 +298,8 @@ public final class InputModifierTracker {
         if (!event.pressed()) return null;
 
         return switch (id) {
+            case UP    -> new MoveAllTracksSequenceSlotGesture(1);
+            case DOWN  -> new MoveAllTracksSequenceSlotGesture(-1);
             case LEFT  -> new UndoGesture();
             case RIGHT -> new RedoGesture();
             default    -> null;
@@ -119,13 +314,95 @@ public final class InputModifierTracker {
      * no gesture.</p>
      */
     public Gesture handleKeyboard(KeyboardNoteEvent event) {
-        if (!event.pressed()) return null;
-        if (heldPadTrack < 0 || heldPadStep < 0) return null;
+        if (!event.pressed()) {
+            if (heldPadTrack >= 0 && heldPadStep >= 0) {
+                return null;
+            }
+            return new KeyboardLiveRecordGesture(event);
+        }
+        if (heldPadTrack < 0 || heldPadStep < 0) return new KeyboardLiveRecordGesture(event);
 
         // Holding pad + keyboard means pitch assignment intent, not tap-toggle.
         pendingTapToggle = false;
 
         return new PitchAssignGesture(heldPadTrack, heldPadStep, event.pitch(), event.velocity());
+    }
+
+    /**
+     * Process a knob event and return the appropriate gesture, or {@code null}.
+     *
+     * <p>For issue #6, when a pad is held, knob indices 1,2,3,6,7,8 (0-based 0,1,2,5,6,7)
+     * map to per-step Parameter Knob gestures.</p>
+     */
+    public Gesture handleKnob(KnobEvent event) {
+        int heldSceneTrack = heldSceneLaunchTrack();
+        if (heldSceneTrack >= 0) {
+            if (event.knob() == 0 && event.delta() != 0) {
+                pendingTapToggle = false;
+                return new TrackStepDurationTurnGesture(heldSceneTrack, event.delta());
+            }
+            PerTrackParameter parameter = switch (event.knob()) {
+                case 1 -> PerTrackParameter.PATTERN_ROTATION;
+                case 2 -> PerTrackParameter.SWING;
+                case 3 -> PerTrackParameter.TRANSPOSE;
+                case 4 -> PerTrackParameter.TRACK_PROBABILITY;
+                case 5 -> PerTrackParameter.LOOP_MULTIPLIER;
+                case 6 -> PerTrackParameter.EUCLIDEAN_DISTRIBUTION;
+                case 7 -> PerTrackParameter.PHASE_OFFSET;
+                default -> null;
+            };
+            if (parameter != null && event.delta() != 0) {
+                pendingTapToggle = false;
+                return new PerTrackKnobTurnGesture(heldSceneTrack, parameter, event.delta());
+            }
+            return null;
+        }
+
+        if (heldPadTrack >= 0 && heldPadStep >= 0) {
+            PerStepParameter parameter = switch (event.knob()) {
+                case 0 -> PerStepParameter.VELOCITY;
+                case 1 -> PerStepParameter.GATE_LENGTH;
+                case 2 -> PerStepParameter.PROBABILITY;
+                case 3 -> PerStepParameter.SCALE_DEGREE_OFFSET;
+                case 4 -> PerStepParameter.CHORD_VOICING;
+                case 5 -> PerStepParameter.RATCHET_COUNT;
+                case 6 -> PerStepParameter.RATCHET_DECAY;
+                case 7 -> PerStepParameter.STEP_CONDITION;
+                default -> null;
+            };
+            if (parameter == null || event.delta() == 0) return null;
+
+            pendingTapToggle = false;
+            return new PerStepKnobTurnGesture(heldPadTrack, heldPadStep, parameter, event.delta());
+        }
+
+        if (event.delta() == 0) {
+            return null;
+        }
+
+        if (heldModifiers.contains(ButtonId.DEVICE)) {
+            return new DeviceMacroTurnGesture(event.knob(), event.delta());
+        }
+        if (heldModifiers.contains(ButtonId.SEND)) {
+            return new SendLevelTurnGesture(event.knob(), event.delta());
+        }
+
+        if (event.knob() < 0 || event.knob() >= SequencerState.TRACK_COUNT) {
+            return null;
+        }
+
+        int track = event.knob();
+        if (heldModifiers.contains(ButtonId.SHIFT) && heldModifiers.contains(ButtonId.PAN)) {
+            return new PerTrackKnobTurnGesture(track, PerTrackParameter.VELOCITY_SPREAD, event.delta());
+        }
+        if (heldModifiers.contains(ButtonId.PAN)) {
+            return new PerTrackKnobTurnGesture(track, PerTrackParameter.STATIC_PAN, event.delta());
+        }
+        if (heldModifiers.contains(ButtonId.VOLUME)) {
+            return new PerTrackKnobTurnGesture(track, PerTrackParameter.CLIP_VOLUME, event.delta());
+        }
+
+        return null;
     }
 
     // -----------------------------------------------------------------------
@@ -140,5 +417,36 @@ public final class InputModifierTracker {
     /** Returns {@code true} if any modifier button is currently held. */
     boolean isAnyModifierHeld() {
         return !heldModifiers.isEmpty();
+    }
+
+    private static int sceneLaunchTrack(ButtonId id) {
+        return switch (id) {
+            case SCENE_LAUNCH_0 -> 0;
+            case SCENE_LAUNCH_1 -> 1;
+            case SCENE_LAUNCH_2 -> 2;
+            case SCENE_LAUNCH_3 -> 3;
+            case SCENE_LAUNCH_4 -> 4;
+            default -> -1;
+        };
+    }
+
+    private int heldSceneLaunchTrack() {
+        for (int track = 0; track < SequencerState.TRACK_COUNT; track++) {
+            if (heldModifiers.contains(sceneLaunchButton(track))) {
+                return track;
+            }
+        }
+        return -1;
+    }
+
+    private static ButtonId sceneLaunchButton(int track) {
+        return switch (track) {
+            case 0 -> ButtonId.SCENE_LAUNCH_0;
+            case 1 -> ButtonId.SCENE_LAUNCH_1;
+            case 2 -> ButtonId.SCENE_LAUNCH_2;
+            case 3 -> ButtonId.SCENE_LAUNCH_3;
+            case 4 -> ButtonId.SCENE_LAUNCH_4;
+            default -> throw new IllegalArgumentException("invalid track: " + track);
+        };
     }
 }

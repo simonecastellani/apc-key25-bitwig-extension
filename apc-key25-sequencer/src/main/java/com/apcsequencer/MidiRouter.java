@@ -1,6 +1,7 @@
 package com.apcsequencer;
 
 import com.bitwig.extension.controller.api.MidiIn;
+import com.bitwig.extension.controller.api.Transport;
 
 /**
  * Connects the APC Key 25 MIDI input port to the sequencer pipeline.
@@ -21,12 +22,17 @@ public final class MidiRouter {
 
     private final InputModifierTracker tracker;
     private final GestureDispatcher    dispatcher;
+    private final Transport            transport;
 
     public MidiRouter(MidiIn midiIn,
                       InputModifierTracker tracker,
-                      GestureDispatcher dispatcher) {
+                      GestureDispatcher dispatcher,
+                      Transport transport) {
         this.tracker    = tracker;
         this.dispatcher = dispatcher;
+        this.transport = transport;
+
+        this.transport.playPosition().markInterested();
 
         // Register the MIDI message callback
         midiIn.setMidiCallback(this::onMidi);
@@ -58,15 +64,15 @@ public final class MidiRouter {
             return;
         }
 
-        // 3. Try knob (stub — routed in a later slice)
+        // 3. Try knob
         KnobEvent knob = MidiDecoder.decodeKnob(status, data1, data2);
         if (knob != null) {
-            // TODO: route to knob handler with modifier context
+            dispatcher.dispatch(tracker.handleKnob(knob));
             return;
         }
 
         // 4. Try keyboard (stub — routed in a later slice)
-        KeyboardNoteEvent key = MidiDecoder.decodeKeyboard(status, data1, data2);
+        KeyboardNoteEvent key = MidiDecoder.decodeKeyboard(status, data1, data2, transport.playPosition().get());
         if (key != null) {
             dispatcher.dispatch(tracker.handleKeyboard(key));
         }

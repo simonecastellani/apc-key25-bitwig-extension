@@ -3,6 +3,10 @@ package com.apcsequencer;
 import com.bitwig.extension.controller.api.Application;
 import com.bitwig.extension.controller.api.ControllerHost;
 import com.bitwig.extension.controller.api.MidiOut;
+import com.bitwig.extension.controller.api.Transport;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Dispatches high-level {@link Gesture} objects to the appropriate subsystems:
@@ -15,18 +19,39 @@ import com.bitwig.extension.controller.api.MidiOut;
  *
  * <p>All gestures are processed synchronously on Bitwig's controller thread.</p>
  */
-public final class GestureDispatcher {
+public final class GestureDispatcher implements ClipWriter.PlaybackStateListener {
+
+    private static final int SCENE_LAUNCH_NOTE_BASE = 0x52;
+    private static final int PLAY_PAUSE_NOTE = 0x5B;
+    private static final int REC_NOTE = 0x5D;
+    private static final int STOP_ALL_CLIPS_NOTE = 0x51;
+    private static final int VOLUME_NOTE = 0x44;
+    private static final int PAN_NOTE = 0x45;
+    private static final int SEND_NOTE = 0x46;
+    private static final int DEVICE_NOTE = 0x47;
 
     private final SequencerState     state;
     private final ClipWriter         clipWriter;
     private final Application        application;
+    private final Transport          transport;
     private final MidiOut            midiOut;
+    private final OverlayController  overlayController = new OverlayController();
 
     /**
      * Playhead positions, one per track (0-based step index; -1 = not playing).
      * Updated by {@link MidiRouter} via {@link #setPlayhead(int, int)}.
      */
     private final int[] playheads = {-1, -1, -1, -1, -1};
+    private final boolean[] trackPlaying = new boolean[SequencerState.TRACK_COUNT];
+    private final boolean[] trackMuted = new boolean[SequencerState.TRACK_COUNT];
+    private boolean transportPlaying;
+    private boolean volumeHeld;
+    private boolean panHeld;
+    private boolean sendHeld;
+    private boolean deviceHeld;
+    private final Map<Integer, KeyboardLiveRecordNote> pendingLiveRecordNotes = new HashMap<>();
+
+    private record KeyboardLiveRecordNote(int pitch, int velocity, double noteOnTimestampBeats) {}
 
     public GestureDispatcher(SequencerState state,
                              ClipWriter clipWriter,
@@ -35,7 +60,22 @@ public final class GestureDispatcher {
         this.state      = state;
         this.clipWriter = clipWriter;
         this.application = host.createApplication();
+        this.transport  = host.createTransport();
         this.midiOut    = midiOut;
+
+        this.clipWriter.setPlaybackStateListener(this);
+
+        transport.isPlaying().markInterested();
+        transport.isPlaying().addValueObserver(isPlaying -> {
+            transportPlaying = isPlaying;
+            flushLeds();
+        });
+        transportPlaying = transport.isPlaying().get();
+
+        for (int t = 0; t < SequencerState.TRACK_COUNT; t++) {
+            trackPlaying[t] = clipWriter.isTrackPlaying(t);
+            trackMuted[t] = clipWriter.isTrackMuted(t);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -47,6 +87,98 @@ public final class GestureDispatcher {
      */
     public void dispatch(Gesture gesture) {
         if (gesture == null) return;
+        if (gesture instanceof SetVolumeHeldGesture g) {
+            volumeHeld = g.held();
+            flushLeds();
+            return;
+        }
+        if (gesture instanceof SetPanHeldGesture g) {
+            panHeld = g.held();
+            flushLeds();
+            return;
+        }
+        if (gesture instanceof SetSendHeldGesture g) {
+            sendHeld = g.held();
+            flushLeds();
+            return;
+        }
+        if (gesture instanceof SetDeviceHeldGesture g) {
+            deviceHeld = g.held();
+            flushLeds();
+            return;
+        }
+        if (gesture instanceof ToggleScaleSelectionOverlayGesture) {
+            if (overlayController.getMode() == OverlayMode.SCALE_SELECTION) {
+                overlayController.returnToNormal();
+            } else {
+                overlayController.enterScaleSelection();
+            }
+            flushLeds();
+            return;
+        }
+        if (gesture instanceof DismissScaleSelectionOverlayGesture) {
+            if (overlayController.getMode() == OverlayMode.SCALE_SELECTION) {
+                overlayController.returnToNormal();
+                flushLeds();
+            }
+            return;
+        }
+        if (gesture instanceof SetSequenceBankOverlayGesture g) {
+            if (g.active()) {
+                overlayController.enterSequenceBank(g.clearMode());
+            } else if (overlayController.getMode() == OverlayMode.SEQUENCE_BANK) {
+                overlayController.returnToNormal();
+            }
+            flushLeds();
+            return;
+        }
+        if (gesture instanceof SetCopyOverlayGesture g) {
+            if (g.active()) {
+                overlayController.enterCopy();
+            } else if (overlayController.getMode() == OverlayMode.COPY_SOURCE
+                    || overlayController.getMode() == OverlayMode.COPY_TARGET) {
+                overlayController.returnToNormal();
+            }
+            flushLeds();
+            return;
+        }
+        if (gesture instanceof SetClearOverlayGesture g) {
+            if (g.active()) {
+                overlayController.enterClear();
+            } else if (overlayController.getMode() == OverlayMode.CLEAR) {
+                overlayController.returnToNormal();
+            }
+            flushLeds();
+            return;
+        }
+        if (gesture instanceof SequenceBankPadGesture g) {
+            handleSequenceBankPad(g);
+            return;
+        }
+        if (gesture instanceof ClearPadGesture g) {
+            handleClearPad(g);
+            return;
+        }
+        if (gesture instanceof ClearTrackGesture g) {
+            handleClearTrack(g);
+            return;
+        }
+        if (gesture instanceof CopyPadGesture g) {
+            handleCopyPad(g);
+            return;
+        }
+        if (gesture instanceof CopyTrackGesture g) {
+            handleCopyTrack(g);
+            return;
+        }
+        if (gesture instanceof MoveAllTracksSequenceSlotGesture g) {
+            handleMoveAllTracksSequenceSlot(g);
+            return;
+        }
+        if (gesture instanceof ScaleSelectionPadGesture g) {
+            handleScaleSelectionPad(g);
+            return;
+        }
         if (gesture instanceof StepToggleGesture g) {
             handleStepToggle(g);
         } else if (gesture instanceof PitchAssignGesture g) {
@@ -55,6 +187,34 @@ public final class GestureDispatcher {
             application.undo();
         } else if (gesture instanceof RedoGesture) {
             application.redo();
+        } else if (gesture instanceof LaunchClipGesture g) {
+            handleLaunchClip(g);
+        } else if (gesture instanceof ToggleTransportGesture) {
+            transport.togglePlay();
+        } else if (gesture instanceof StopAllGesture) {
+            clipWriter.stopAllTrackClips();
+        } else if (gesture instanceof SetLiveRecordModeGesture g) {
+            overlayController.setLiveRecordActive(g.active());
+            if (!overlayController.isLiveRecordActive()) {
+                pendingLiveRecordNotes.clear();
+            }
+            flushLeds();
+        } else if (gesture instanceof KeyboardLiveRecordGesture g) {
+            handleKeyboardLiveRecord(g.event());
+        } else if (gesture instanceof ToggleTrackMuteGesture g) {
+            clipWriter.toggleTrackMute(g.track());
+        } else if (gesture instanceof PerStepKnobTurnGesture g) {
+            handlePerStepKnobTurn(g);
+        } else if (gesture instanceof TrackStepDurationTurnGesture g) {
+            handleTrackStepDurationTurn(g);
+        } else if (gesture instanceof TrackLoopEndPointGesture g) {
+            handleTrackLoopEndPoint(g);
+        } else if (gesture instanceof PerTrackKnobTurnGesture g) {
+            handlePerTrackKnobTurn(g);
+        } else if (gesture instanceof DeviceMacroTurnGesture g) {
+            clipWriter.adjustFocusedTrackDeviceMacro(state.getFocusedTrack(), g.knob(), g.delta());
+        } else if (gesture instanceof SendLevelTurnGesture g) {
+            clipWriter.adjustFocusedTrackSendLevel(state.getFocusedTrack(), g.knob(), g.delta());
         }
     }
 
@@ -71,10 +231,39 @@ public final class GestureDispatcher {
     }
 
     /**
+     * Updates Global Scale and rewrites all active steps so per-step scale-degree
+     * transpositions are re-resolved against the new scale.
+     */
+    public void updateGlobalScale(GlobalScale scale) {
+        if (scale.equals(state.getGlobalScale())) {
+            return;
+        }
+        state.setGlobalScale(scale);
+        for (int track = 0; track < SequencerState.TRACK_COUNT; track++) {
+            for (int step = 0; step < TrackState.STEP_COUNT; step++) {
+                StepState stepState = state.getStep(track, step);
+                if (stepState.isActive()) {
+                    clipWriter.writeStep(track, step, true, stepState);
+                }
+            }
+        }
+        flushLeds();
+    }
+
+    /**
      * Forces a full LED refresh.  Useful on init and after slot switches.
      */
     public void flushLeds() {
-        int[][] leds = LedRenderer.render(state, playheads);
+        int[][] leds = switch (overlayController.getMode()) {
+            case SCALE_SELECTION -> LedRenderer.renderScaleSelection(state);
+            case SEQUENCE_BANK -> LedRenderer.renderSequenceBank(state);
+            default -> LedRenderer.render(state, playheads);
+        };
+
+        if (overlayController.getMode() == OverlayMode.COPY_TARGET && overlayController.hasCopyStepSource()) {
+            leds[overlayController.copySourceTrack()][overlayController.copySourceStep()] = LedRenderer.YELLOW_BLINK;
+        }
+
         for (int t = 0; t < SequencerState.TRACK_COUNT; t++) {
             for (int s = 0; s < TrackState.STEP_COUNT; s++) {
                 int padNote  = (4 - t) * 8 + s;   // pad LED MIDI note
@@ -82,6 +271,45 @@ public final class GestureDispatcher {
                 midiOut.sendMidi(0x90, padNote, velocity);
             }
         }
+
+        for (int track = 0; track < SequencerState.TRACK_COUNT; track++) {
+            int note = SCENE_LAUNCH_NOTE_BASE + track;
+            int velocity;
+            if (overlayController.getMode() == OverlayMode.COPY_TARGET
+                    && overlayController.hasCopyTrackSource()
+                    && overlayController.copySourceSceneTrack() == track) {
+                velocity = LedRenderer.YELLOW_BLINK;
+            } else {
+                velocity = trackPlaying[track]
+                        ? (trackMuted[track] ? LedRenderer.YELLOW : LedRenderer.GREEN)
+                        : LedRenderer.OFF;
+            }
+            midiOut.sendMidi(0x90, note, velocity);
+        }
+
+        midiOut.sendMidi(0x90, PLAY_PAUSE_NOTE, transportPlaying ? LedRenderer.GREEN : LedRenderer.OFF);
+        boolean sequenceBank = overlayController.getMode() == OverlayMode.SEQUENCE_BANK;
+        midiOut.sendMidi(0x90, REC_NOTE, sequenceBank ? LedRenderer.YELLOW : LedRenderer.OFF);
+        midiOut.sendMidi(0x90, STOP_ALL_CLIPS_NOTE,
+                overlayController.isLiveRecordActive() ? LedRenderer.RED : LedRenderer.OFF);
+        boolean scaleSelection = overlayController.getMode() == OverlayMode.SCALE_SELECTION;
+        midiOut.sendMidi(0x90, VOLUME_NOTE,
+                (volumeHeld || scaleSelection) ? LedRenderer.YELLOW : LedRenderer.OFF);
+        midiOut.sendMidi(0x90, PAN_NOTE, panHeld ? LedRenderer.YELLOW : LedRenderer.OFF);
+        midiOut.sendMidi(0x90, SEND_NOTE, sendHeld ? LedRenderer.YELLOW : LedRenderer.OFF);
+        midiOut.sendMidi(0x90, DEVICE_NOTE, deviceHeld ? LedRenderer.YELLOW : LedRenderer.OFF);
+    }
+
+    @Override
+    public void onTrackPlayingChanged(int track, boolean playing) {
+        trackPlaying[track] = playing;
+        flushLeds();
+    }
+
+    @Override
+    public void onTrackMutedChanged(int track, boolean muted) {
+        trackMuted[track] = muted;
+        flushLeds();
     }
 
     // -----------------------------------------------------------------------
@@ -89,6 +317,9 @@ public final class GestureDispatcher {
     // -----------------------------------------------------------------------
 
     private void handleStepToggle(StepToggleGesture g) {
+        if (overlayController.getMode() != OverlayMode.NORMAL) {
+            return;
+        }
         StateDiff diff = state.toggleStep(g.track(), g.step());
 
         // Reflect every changed step to Bitwig
@@ -103,6 +334,9 @@ public final class GestureDispatcher {
     }
 
     private void handlePitchAssign(PitchAssignGesture g) {
+        if (overlayController.getMode() != OverlayMode.NORMAL) {
+            return;
+        }
         StepState currentStep = state.getStep(g.track(), g.step());
         int oldPitch = currentStep.getPitch();
         int oldVelocity = currentStep.getVelocity();
@@ -127,4 +361,344 @@ public final class GestureDispatcher {
 
         flushLeds();
     }
+
+    private void handleLaunchClip(LaunchClipGesture g) {
+        if (overlayController.getMode() != OverlayMode.NORMAL) {
+            return;
+        }
+        int track = g.track();
+        state.setFocusedTrack(track);
+        clipWriter.toggleTrackClipPlayback(track, state.getTrack(track).getActiveSlot());
+    }
+
+    private void handlePerStepKnobTurn(PerStepKnobTurnGesture g) {
+        if (overlayController.getMode() != OverlayMode.NORMAL) {
+            return;
+        }
+        StepState step = state.getStep(g.track(), g.step());
+        StateDiff diff = switch (g.parameter()) {
+            case VELOCITY -> {
+                int next = clampInt(step.getVelocity() + g.delta(), 0, 127);
+                yield state.setStepVelocity(g.track(), g.step(), next);
+            }
+            case GATE_LENGTH -> {
+                double next = clampDouble(step.getGateLength() + (g.delta() * 0.01), 0.01, 1.0);
+                yield state.setStepGateLength(g.track(), g.step(), next);
+            }
+            case PROBABILITY -> {
+                double next = clampDouble(step.getProbability() + (g.delta() * 0.01), 0.0, 1.0);
+                yield state.setStepProbability(g.track(), g.step(), next);
+            }
+            case SCALE_DEGREE_OFFSET -> {
+                int next = clampInt(step.getScaleDegreeOffset() + g.delta(), -7, 7);
+                yield state.setStepScaleDegreeOffset(g.track(), g.step(), next);
+            }
+            case CHORD_VOICING -> {
+                int direction = Integer.compare(g.delta(), 0);
+                if (direction == 0) {
+                    yield StateDiff.builder().build();
+                }
+                ChordVoicing[] voicings = ChordVoicing.values();
+                int next = Math.floorMod(step.getChordVoicing().ordinal() + direction, voicings.length);
+                yield state.setStepChordVoicing(g.track(), g.step(), voicings[next]);
+            }
+            case RATCHET_COUNT -> {
+                int next = clampInt(step.getRatchetCount() + g.delta(), 1, 8);
+                yield state.setStepRatchetCount(g.track(), g.step(), next);
+            }
+            case RATCHET_DECAY -> {
+                double next = clampDouble(step.getRatchetDecay() + (g.delta() * 0.05), 0.0, 1.0);
+                yield state.setStepRatchetDecay(g.track(), g.step(), next);
+            }
+            case STEP_CONDITION -> {
+                StepCondition[] conditions = StepCondition.values();
+                int current = step.getStepCondition().ordinal();
+                int direction = Integer.compare(g.delta(), 0);
+                int next = Math.floorMod(current + direction, conditions.length);
+                yield state.setStepCondition(g.track(), g.step(), conditions[next]);
+            }
+        };
+
+        if (diff.isEmpty()) {
+            return;
+        }
+
+        StepState updated = state.getStep(g.track(), g.step());
+        clipWriter.writeStep(g.track(), g.step(), updated.isActive(), updated);
+        flushLeds();
+    }
+
+    private void handleTrackStepDurationTurn(TrackStepDurationTurnGesture g) {
+        if (overlayController.getMode() != OverlayMode.NORMAL) {
+            return;
+        }
+        TrackState track = state.getTrack(g.track());
+        StepDuration[] values = StepDuration.values();
+        int direction = Integer.compare(g.delta(), 0);
+        if (direction == 0) {
+            return;
+        }
+        int current = track.getStepDuration().ordinal();
+        int next = Math.floorMod(current + direction, values.length);
+        StateDiff diff = state.setStepDuration(g.track(), values[next]);
+        if (diff.isEmpty()) {
+            return;
+        }
+        clipWriter.applyTrackTiming(g.track());
+        flushLeds();
+    }
+
+    private void handleTrackLoopEndPoint(TrackLoopEndPointGesture g) {
+        if (overlayController.getMode() != OverlayMode.NORMAL) {
+            return;
+        }
+        StateDiff diff = state.setLoopEndPoint(g.track(), g.loopEndPoint());
+        if (diff.isEmpty()) {
+            return;
+        }
+        clipWriter.applyTrackTiming(g.track());
+        flushLeds();
+    }
+
+    private void handlePerTrackKnobTurn(PerTrackKnobTurnGesture g) {
+        if (overlayController.getMode() != OverlayMode.NORMAL) {
+            return;
+        }
+        TrackState track = state.getTrack(g.track());
+        StateDiff diff = switch (g.parameter()) {
+            case CLIP_VOLUME -> {
+                clipWriter.adjustTrackClipVolume(g.track(), g.delta());
+                yield StateDiff.builder().build();
+            }
+            case STATIC_PAN -> {
+                double next = clampDouble(track.getStaticPan() + (g.delta() * 0.01), -1.0, 1.0);
+                yield state.setStaticPan(g.track(), next);
+            }
+            case VELOCITY_SPREAD -> {
+                double next = clampDouble(track.getVelocitySpread() + (g.delta() * 0.01), 0.0, 1.0);
+                yield state.setVelocitySpread(g.track(), next);
+            }
+            case PATTERN_ROTATION -> state.setPatternRotation(g.track(), track.getPatternRotation() + g.delta());
+            case SWING -> state.setSwing(g.track(), track.getSwing() + g.delta());
+            case TRANSPOSE -> state.setTranspose(g.track(), track.getTranspose() + g.delta());
+            case TRACK_PROBABILITY ->
+                    state.setTrackProbability(g.track(), track.getTrackProbability() + (g.delta() * 0.01));
+            case LOOP_MULTIPLIER -> {
+                LoopMultiplier[] values = LoopMultiplier.values();
+                int current = track.getLoopMultiplier().ordinal();
+                int direction = Integer.compare(g.delta(), 0);
+                if (direction == 0) {
+                    yield StateDiff.builder().build();
+                }
+                int next = Math.floorMod(current + direction, values.length);
+                yield state.setLoopMultiplier(g.track(), values[next]);
+            }
+            case EUCLIDEAN_DISTRIBUTION ->
+                    state.setEuclideanDistribution(g.track(), track.getEuclideanDistribution() + g.delta());
+            case PHASE_OFFSET -> state.setPhaseOffset(g.track(), track.getPhaseOffset() + (g.delta() * 0.01));
+        };
+        if (diff.isEmpty()) {
+            if (g.parameter() == PerTrackParameter.CLIP_VOLUME) {
+                flushLeds();
+            }
+            return;
+        }
+
+        if (g.parameter() == PerTrackParameter.EUCLIDEAN_DISTRIBUTION) {
+            for (StateDiff.StepChange change : diff.stepChanges()) {
+                StepState step = state.getStep(change.trackIndex(), change.stepIndex());
+                clipWriter.writeStep(change.trackIndex(), change.stepIndex(), step.isActive(), step);
+            }
+        } else if (g.parameter() == PerTrackParameter.STATIC_PAN) {
+            clipWriter.applyTrackStaticPan(g.track());
+        } else if (g.parameter() == PerTrackParameter.VELOCITY_SPREAD) {
+            clipWriter.applyTrackVelocitySpread(g.track());
+        } else {
+            clipWriter.applyTrackTiming(g.track());
+        }
+        flushLeds();
+    }
+
+    private void handleKeyboardLiveRecord(KeyboardNoteEvent event) {
+        if (!overlayController.isLiveRecordActive()) {
+            return;
+        }
+
+        if (event.pressed()) {
+            pendingLiveRecordNotes.put(event.pitch(),
+                    new KeyboardLiveRecordNote(event.pitch(), event.velocity(), event.timestampBeats()));
+            return;
+        }
+
+        KeyboardLiveRecordNote note = pendingLiveRecordNotes.remove(event.pitch());
+        if (note == null || Double.isNaN(note.noteOnTimestampBeats())) {
+            return;
+        }
+
+        int track = state.getFocusedTrack();
+        TrackState trackState = state.getTrack(track);
+        double stepDuration = trackState.getStepDuration().beatTime();
+        if (stepDuration <= 0.0) {
+            return;
+        }
+        int loopEndPoint = trackState.getLoopEndPoint();
+        int nearestStep = Math.floorMod((int) Math.round(note.noteOnTimestampBeats() / stepDuration), loopEndPoint);
+
+        state.setStepActive(track, nearestStep, true);
+        state.setStepPitch(track, nearestStep, note.pitch());
+        state.setStepVelocity(track, nearestStep, note.velocity());
+
+        StepState step = state.getStep(track, nearestStep);
+        clipWriter.writeStep(track, nearestStep, true, step);
+        flushLeds();
+    }
+
+    private static int clampInt(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private void handleScaleSelectionPad(ScaleSelectionPadGesture g) {
+        int root = state.getGlobalScale().root();
+        Mode mode = state.getGlobalScale().mode();
+
+        if (g.track() == 0 && g.step() <= 7) {
+            root = g.step();
+        } else if (g.track() == 1 && g.step() <= 7) {
+            mode = switch (g.step()) {
+                case 0 -> Mode.MAJOR;
+                case 1 -> Mode.MINOR;
+                case 2 -> Mode.DORIAN;
+                case 3 -> Mode.PHRYGIAN;
+                case 4 -> Mode.LYDIAN;
+                case 5 -> Mode.MIXOLYDIAN;
+                case 6 -> Mode.LOCRIAN;
+                case 7 -> Mode.PENTATONIC_MAJOR;
+                default -> mode;
+            };
+        } else if (g.track() == 2 && g.step() <= 1) {
+            mode = g.step() == 0 ? Mode.PENTATONIC_MINOR : Mode.CHROMATIC;
+        } else {
+            return;
+        }
+
+        updateGlobalScale(new GlobalScale(root, mode));
+    }
+
+    private static double clampDouble(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private void handleSequenceBankPad(SequenceBankPadGesture g) {
+        if (overlayController.getMode() != OverlayMode.SEQUENCE_BANK) {
+            return;
+        }
+
+        int track = g.track();
+        int slot = g.slot();
+        if (track < 0 || track >= SequencerState.TRACK_COUNT || slot < 0 || slot >= TrackState.SLOT_COUNT) {
+            return;
+        }
+
+        if (overlayController.isSequenceBankClearMode()) {
+            state.clearSlot(track, slot);
+            clipWriter.clearSlot(track, slot);
+            flushLeds();
+            return;
+        }
+
+        int sourceSlot = state.getTrack(track).getActiveSlot();
+        if (!clipWriter.isSlotPopulated(track, slot)) {
+            clipWriter.copySlotIfEmpty(track, sourceSlot, slot);
+        }
+        state.switchSlot(track, slot);
+        clipWriter.launchSlot(track, slot);
+        flushLeds();
+    }
+
+    private void handleMoveAllTracksSequenceSlot(MoveAllTracksSequenceSlotGesture g) {
+        if (g.delta() == 0) {
+            return;
+        }
+        for (int track = 0; track < SequencerState.TRACK_COUNT; track++) {
+            int current = state.getTrack(track).getActiveSlot();
+            int destination = Math.floorMod(current + Integer.signum(g.delta()), TrackState.SLOT_COUNT);
+            if (!clipWriter.isSlotPopulated(track, destination)) {
+                clipWriter.copySlotIfEmpty(track, current, destination);
+            }
+            state.switchSlot(track, destination);
+            clipWriter.launchSlot(track, destination);
+        }
+        flushLeds();
+    }
+
+    private void handleCopyPad(CopyPadGesture g) {
+        if (overlayController.getMode() == OverlayMode.COPY_SOURCE) {
+            overlayController.selectCopySourceStep(g.track(), g.step());
+            flushLeds();
+            return;
+        }
+
+        if (overlayController.getMode() != OverlayMode.COPY_TARGET || !overlayController.hasCopyStepSource()) {
+            return;
+        }
+
+        StateDiff diff = state.copyStep(
+                overlayController.copySourceTrack(),
+                overlayController.copySourceStep(),
+                g.track(),
+                g.step());
+
+        if (!diff.isEmpty()) {
+            StepState destination = state.getStep(g.track(), g.step());
+            clipWriter.writeStep(g.track(), g.step(), destination.isActive(), destination);
+        }
+        overlayController.returnToNormal();
+        flushLeds();
+    }
+
+    private void handleCopyTrack(CopyTrackGesture g) {
+        if (overlayController.getMode() == OverlayMode.COPY_SOURCE) {
+            overlayController.selectCopySourceTrack(g.track());
+            flushLeds();
+            return;
+        }
+
+        if (overlayController.getMode() != OverlayMode.COPY_TARGET || !overlayController.hasCopyTrackSource()) {
+            return;
+        }
+
+        StateDiff diff = state.copyTrackSequence(overlayController.copySourceSceneTrack(), g.track());
+        if (!diff.isEmpty()) {
+            clipWriter.applyTrackTiming(g.track());
+        }
+        overlayController.returnToNormal();
+        flushLeds();
+    }
+
+    private void handleClearPad(ClearPadGesture g) {
+        if (overlayController.getMode() != OverlayMode.CLEAR) {
+            return;
+        }
+        StateDiff diff = state.clearStep(g.track(), g.step());
+        if (!diff.isEmpty()) {
+            StepState step = state.getStep(g.track(), g.step());
+            clipWriter.writeStep(g.track(), g.step(), false, step);
+        }
+        flushLeds();
+    }
+
+    private void handleClearTrack(ClearTrackGesture g) {
+        if (overlayController.getMode() != OverlayMode.CLEAR) {
+            return;
+        }
+        StateDiff diff = state.clearTrackSteps(g.track());
+        if (!diff.isEmpty()) {
+            for (int step = 0; step < TrackState.STEP_COUNT; step++) {
+                StepState cleared = state.getStep(g.track(), step);
+                clipWriter.writeStep(g.track(), step, false, cleared);
+            }
+        }
+        flushLeds();
+    }
+
 }

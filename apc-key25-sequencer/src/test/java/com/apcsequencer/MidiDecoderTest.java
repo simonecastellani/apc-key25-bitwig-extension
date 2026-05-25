@@ -111,7 +111,7 @@ class MidiDecoderTest {
         KnobEvent evt = MidiDecoder.decodeKnob(0xb0, 0x30, 0x40);
         assertNotNull(evt);
         assertEquals(0, evt.knob(), "CC 0x30 → knob index 0");
-        assertEquals(0x40, evt.value());
+        assertEquals(0, evt.delta(), "0x40 is neutral/no movement");
     }
 
     @Test
@@ -119,11 +119,29 @@ class MidiDecoderTest {
         KnobEvent evt = MidiDecoder.decodeKnob(0xb0, 0x37, 0x7f);
         assertNotNull(evt);
         assertEquals(7, evt.knob(), "CC 0x37 → knob index 7");
+        assertEquals(1, evt.delta(), "0x7f should decode as +1");
+    }
+
+    @Test
+    void knob_turn_counterclockwise_decodes_to_negative_delta() {
+        KnobEvent evt = MidiDecoder.decodeKnob(0xb0, 0x35, 0x00);
+        assertNotNull(evt);
+        assertEquals(-1, evt.delta(), "0x00 should decode as -1");
     }
 
     @Test
     void non_knob_cc_returns_null() {
         KnobEvent evt = MidiDecoder.decodeKnob(0xb0, 0x10, 0x40);
         assertNull(evt, "CC 0x10 is not a knob");
+    }
+
+    @Test
+    void keyboard_note_on_preserves_timestamp() {
+        KeyboardNoteEvent evt = MidiDecoder.decodeKeyboard(0x91, 60, 100, 3.25);
+        assertNotNull(evt);
+        assertEquals(60, evt.pitch());
+        assertEquals(100, evt.velocity());
+        assertTrue(evt.pressed());
+        assertEquals(3.25, evt.timestampBeats(), 1e-9);
     }
 }

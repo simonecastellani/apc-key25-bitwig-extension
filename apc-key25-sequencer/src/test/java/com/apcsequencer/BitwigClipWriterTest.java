@@ -1,12 +1,23 @@
 package com.apcsequencer;
 
 import com.bitwig.extension.callback.BooleanValueChangedCallback;
+import com.bitwig.extension.callback.ClipLauncherSlotBankPlaybackStateChangedCallback;
 import com.bitwig.extension.controller.api.BooleanValue;
+import com.bitwig.extension.controller.api.ClipLauncherSlotBank;
+import com.bitwig.extension.controller.api.NoteOccurrence;
+import com.bitwig.extension.controller.api.NoteStep;
+import com.bitwig.extension.controller.api.Parameter;
 import com.bitwig.extension.controller.api.PinnableCursorClip;
+import com.bitwig.extension.controller.api.SettableBeatTimeValue;
+import com.bitwig.extension.controller.api.SettableBooleanValue;
+import com.bitwig.extension.controller.api.Track;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.mockito.ArgumentMatchers.*;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.mockito.Mockito.*;
 
 /**
@@ -20,7 +31,18 @@ class BitwigClipWriterTest {
     private static final int TRACK_COUNT = SequencerState.TRACK_COUNT; // 5
 
     private PinnableCursorClip[]              clips;
+    private Track[]                           tracks;
     private BooleanValueChangedCallback[]     existsCallbacks;
+    private BooleanValueChangedCallback[]     muteCallbacks;
+    private ClipLauncherSlotBankPlaybackStateChangedCallback[] playbackCallbacks;
+    private ClipLauncherSlotBank[]            slotBanks;
+    private SettableBooleanValue[]            muteValues;
+    private Parameter[]                       trackVolumes;
+    private Parameter[][]                     trackDeviceMacros;
+    private Parameter[][]                     trackSendLevels;
+    private SettableBeatTimeValue[]           loopLengths;
+    private SettableBeatTimeValue[]           playStarts;
+    private SettableBooleanValue[]            shuffleValues;
     private SequencerState                    state;
     private BitwigClipWriter                  writer;
 
@@ -28,12 +50,31 @@ class BitwigClipWriterTest {
     void setUp() {
         state  = new SequencerState();
         clips  = new PinnableCursorClip[TRACK_COUNT];
+        tracks = new Track[TRACK_COUNT];
         existsCallbacks = new BooleanValueChangedCallback[TRACK_COUNT];
+        muteCallbacks = new BooleanValueChangedCallback[TRACK_COUNT];
+        playbackCallbacks = new ClipLauncherSlotBankPlaybackStateChangedCallback[TRACK_COUNT];
+        slotBanks = new ClipLauncherSlotBank[TRACK_COUNT];
+        muteValues = new SettableBooleanValue[TRACK_COUNT];
+        trackVolumes = new Parameter[TRACK_COUNT];
+        trackDeviceMacros = new Parameter[TRACK_COUNT][TrackState.STEP_COUNT];
+        trackSendLevels = new Parameter[TRACK_COUNT][TrackState.STEP_COUNT];
+        loopLengths = new SettableBeatTimeValue[TRACK_COUNT];
+        playStarts = new SettableBeatTimeValue[TRACK_COUNT];
+        shuffleValues = new SettableBooleanValue[TRACK_COUNT];
 
         for (int t = 0; t < TRACK_COUNT; t++) {
             PinnableCursorClip clip = mock(PinnableCursorClip.class);
             BooleanValue existsValue = mock(BooleanValue.class);
+            NoteStep noteStep = mock(NoteStep.class);
+            SettableBeatTimeValue loopLength = mock(SettableBeatTimeValue.class);
+            SettableBeatTimeValue playStart = mock(SettableBeatTimeValue.class);
+            SettableBooleanValue shuffle = mock(SettableBooleanValue.class);
             when(clip.exists()).thenReturn(existsValue);
+            when(clip.getStep(anyInt(), anyInt(), anyInt())).thenReturn(noteStep);
+            when(clip.getLoopLength()).thenReturn(loopLength);
+            when(clip.getPlayStart()).thenReturn(playStart);
+            when(clip.getShuffle()).thenReturn(shuffle);
             when(existsValue.get()).thenReturn(false);
 
             // Capture the callback so tests can fire exists=true/false manually.
@@ -44,9 +85,42 @@ class BitwigClipWriterTest {
             }).when(existsValue).addValueObserver(any(BooleanValueChangedCallback.class));
 
             clips[t] = clip;
+            loopLengths[t] = loopLength;
+            playStarts[t] = playStart;
+            shuffleValues[t] = shuffle;
+
+            Track track = mock(Track.class);
+            ClipLauncherSlotBank slotBank = mock(ClipLauncherSlotBank.class);
+            SettableBooleanValue mute = mock(SettableBooleanValue.class);
+            Parameter volume = mock(Parameter.class);
+            when(track.clipLauncherSlotBank()).thenReturn(slotBank);
+            when(track.mute()).thenReturn(mute);
+            when(track.volume()).thenReturn(volume);
+            when(mute.get()).thenReturn(false);
+
+            final int idxTrack = t;
+            doAnswer(inv -> {
+                playbackCallbacks[idxTrack] = inv.getArgument(0);
+                return null;
+            }).when(slotBank).addPlaybackStateObserver(any(ClipLauncherSlotBankPlaybackStateChangedCallback.class));
+
+            doAnswer(inv -> {
+                muteCallbacks[idxTrack] = inv.getArgument(0);
+                return null;
+            }).when(mute).addValueObserver(any(BooleanValueChangedCallback.class));
+
+            tracks[t] = track;
+            slotBanks[t] = slotBank;
+            muteValues[t] = mute;
+            trackVolumes[t] = volume;
+
+            for (int i = 0; i < TrackState.STEP_COUNT; i++) {
+                trackDeviceMacros[t][i] = mock(Parameter.class);
+                trackSendLevels[t][i] = mock(Parameter.class);
+            }
         }
 
-        writer = new BitwigClipWriter(clips, state);
+        writer = new BitwigClipWriter(clips, tracks, trackDeviceMacros, trackSendLevels, state);
 
         // Mark all clips ready (simulate Bitwig reporting exists=true).
         for (int t = 0; t < TRACK_COUNT; t++) {
@@ -64,7 +138,7 @@ class BitwigClipWriterTest {
 
         for (int targetTrack = 0; targetTrack < TRACK_COUNT; targetTrack++) {
             // Reset call counts.
-            for (PinnableCursorClip c : clips) reset(c);
+            for (PinnableCursorClip c : clips) clearInvocations(c);
 
             writer.writeStep(targetTrack, 0, true, stepState);
 
@@ -86,7 +160,7 @@ class BitwigClipWriterTest {
         StepState stepState = new StepState();
 
         for (int targetTrack = 0; targetTrack < TRACK_COUNT; targetTrack++) {
-            for (PinnableCursorClip c : clips) reset(c);
+            for (PinnableCursorClip c : clips) clearInvocations(c);
 
             writer.writeStep(targetTrack, 3, false, stepState);
 
@@ -113,7 +187,9 @@ class BitwigClipWriterTest {
         for (int t = 0; t < TRACK_COUNT; t++) {
             PinnableCursorClip clip = mock(PinnableCursorClip.class);
             BooleanValue existsValue = mock(BooleanValue.class);
+            NoteStep noteStep = mock(NoteStep.class);
             when(clip.exists()).thenReturn(existsValue);
+            when(clip.getStep(anyInt(), anyInt(), anyInt())).thenReturn(noteStep);
             final int idx = t;
             doAnswer(inv -> {
                 freshCallbacks[idx] = inv.getArgument(0);
@@ -123,7 +199,31 @@ class BitwigClipWriterTest {
             freshClips[t] = clip;
         }
 
-        BitwigClipWriter freshWriter = new BitwigClipWriter(freshClips, state);
+        Track[] freshTracks = new Track[TRACK_COUNT];
+        for (int t = 0; t < TRACK_COUNT; t++) {
+            Track track = mock(Track.class);
+            ClipLauncherSlotBank slotBank = mock(ClipLauncherSlotBank.class);
+            SettableBooleanValue mute = mock(SettableBooleanValue.class);
+            Parameter volume = mock(Parameter.class);
+            when(track.clipLauncherSlotBank()).thenReturn(slotBank);
+            when(track.mute()).thenReturn(mute);
+            when(track.volume()).thenReturn(volume);
+            when(mute.get()).thenReturn(false);
+            doNothing().when(slotBank).addPlaybackStateObserver(any(ClipLauncherSlotBankPlaybackStateChangedCallback.class));
+            doNothing().when(mute).addValueObserver(any(BooleanValueChangedCallback.class));
+            freshTracks[t] = track;
+        }
+
+        Parameter[][] freshMacros = new Parameter[TRACK_COUNT][TrackState.STEP_COUNT];
+        Parameter[][] freshSends = new Parameter[TRACK_COUNT][TrackState.STEP_COUNT];
+        for (int t = 0; t < TRACK_COUNT; t++) {
+            for (int i = 0; i < TrackState.STEP_COUNT; i++) {
+                freshMacros[t][i] = mock(Parameter.class);
+                freshSends[t][i] = mock(Parameter.class);
+            }
+        }
+
+        BitwigClipWriter freshWriter = new BitwigClipWriter(freshClips, freshTracks, freshMacros, freshSends, state);
 
         // Write to track 2 before that clip is ready.
         freshWriter.writeStep(2, 5, true, new StepState());
@@ -144,7 +244,9 @@ class BitwigClipWriterTest {
         for (int t = 0; t < TRACK_COUNT; t++) {
             PinnableCursorClip clip = mock(PinnableCursorClip.class);
             BooleanValue existsValue = mock(BooleanValue.class);
+            NoteStep noteStep = mock(NoteStep.class);
             when(clip.exists()).thenReturn(existsValue);
+            when(clip.getStep(anyInt(), anyInt(), anyInt())).thenReturn(noteStep);
 
             boolean trackIsReady = t == 1;
             when(existsValue.get()).thenReturn(trackIsReady);
@@ -153,10 +255,302 @@ class BitwigClipWriterTest {
             freshClips[t] = clip;
         }
 
-        BitwigClipWriter freshWriter = new BitwigClipWriter(freshClips, state);
+        Track[] freshTracks = new Track[TRACK_COUNT];
+        for (int t = 0; t < TRACK_COUNT; t++) {
+            Track track = mock(Track.class);
+            ClipLauncherSlotBank slotBank = mock(ClipLauncherSlotBank.class);
+            SettableBooleanValue mute = mock(SettableBooleanValue.class);
+            Parameter volume = mock(Parameter.class);
+            when(track.clipLauncherSlotBank()).thenReturn(slotBank);
+            when(track.mute()).thenReturn(mute);
+            when(track.volume()).thenReturn(volume);
+            when(mute.get()).thenReturn(false);
+            doNothing().when(slotBank).addPlaybackStateObserver(any(ClipLauncherSlotBankPlaybackStateChangedCallback.class));
+            doNothing().when(mute).addValueObserver(any(BooleanValueChangedCallback.class));
+            freshTracks[t] = track;
+        }
+
+        Parameter[][] freshMacros = new Parameter[TRACK_COUNT][TrackState.STEP_COUNT];
+        Parameter[][] freshSends = new Parameter[TRACK_COUNT][TrackState.STEP_COUNT];
+        for (int t = 0; t < TRACK_COUNT; t++) {
+            for (int i = 0; i < TrackState.STEP_COUNT; i++) {
+                freshMacros[t][i] = mock(Parameter.class);
+                freshSends[t][i] = mock(Parameter.class);
+            }
+        }
+
+        BitwigClipWriter freshWriter = new BitwigClipWriter(freshClips, freshTracks, freshMacros, freshSends, state);
 
         freshWriter.writeStep(1, 2, true, new StepState());
 
         verify(freshClips[1], times(1)).setStep(anyInt(), eq(2), anyInt(), anyInt(), anyDouble());
+    }
+
+    @Test
+    void toggleTrackClipPlayback_launches_slot_when_track_not_playing() {
+        writer.toggleTrackClipPlayback(1, 3);
+
+        verify(slotBanks[1]).launch(3);
+        verify(slotBanks[1], never()).stop();
+    }
+
+    @Test
+    void toggleTrackClipPlayback_stops_track_when_any_slot_is_playing() {
+        playbackCallbacks[1].playbackStateChanged(4, 1, false);
+
+        writer.toggleTrackClipPlayback(1, 3);
+
+        verify(slotBanks[1]).stop();
+        verify(slotBanks[1], never()).launch(anyInt());
+    }
+
+    @Test
+    void stopAllTrackClips_stops_each_track_slot_bank() {
+        writer.stopAllTrackClips();
+
+        for (int t = 0; t < TRACK_COUNT; t++) {
+            verify(slotBanks[t]).stop();
+        }
+    }
+
+    @Test
+    void playback_state_observer_updates_track_playing_flag() {
+        playbackCallbacks[2].playbackStateChanged(0, 1, false);
+        assertTrue(writer.isTrackPlaying(2));
+
+        playbackCallbacks[2].playbackStateChanged(0, 0, false);
+        assertFalse(writer.isTrackPlaying(2));
+    }
+
+    @Test
+    void mute_observer_updates_track_muted_flag() {
+        muteCallbacks[3].valueChanged(true);
+        assertTrue(writer.isTrackMuted(3));
+
+        muteCallbacks[3].valueChanged(false);
+        assertFalse(writer.isTrackMuted(3));
+    }
+
+    @Test
+    void adjust_track_clip_volume_increments_track_volume_parameter() {
+        writer.adjustTrackClipVolume(2, 3);
+
+        verify(trackVolumes[2]).inc(0.03);
+    }
+
+    @Test
+    void toggle_track_mute_flips_current_mute_state() {
+        muteCallbacks[1].valueChanged(false);
+        writer.toggleTrackMute(1);
+        verify(muteValues[1]).set(true);
+
+        reset(muteValues[1]);
+        muteCallbacks[1].valueChanged(true);
+        writer.toggleTrackMute(1);
+        verify(muteValues[1]).set(false);
+    }
+
+    @Test
+    void adjust_focused_track_device_macro_increments_matching_macro_parameter() {
+        writer.adjustFocusedTrackDeviceMacro(2, 4, 3);
+
+        verify(trackDeviceMacros[2][4]).inc(0.03);
+    }
+
+    @Test
+    void adjust_focused_track_send_level_increments_matching_send_parameter() {
+        writer.adjustFocusedTrackSendLevel(1, 6, -2);
+
+        verify(trackSendLevels[1][6]).inc(-0.02);
+    }
+
+    @Test
+    void write_step_parameters_sets_notestep_fields() {
+        NoteStep noteStep = mock(NoteStep.class);
+        when(clips[0].getStep(anyInt(), anyInt(), anyInt())).thenReturn(noteStep);
+
+        writer.writeStepParameters(0, 2, 60, 0.8, 0.25, 0.5, 4, -0.5,
+                NoteOccurrence.FIRST, 4, 0b0001, 7);
+
+        verify(noteStep).setVelocity(0.8);
+        verify(noteStep).setDuration(0.25);
+        verify(noteStep).setChance(0.5);
+        verify(noteStep).setIsChanceEnabled(true);
+        verify(noteStep).setRepeatCount(4);
+        verify(noteStep).setRepeatVelocityEnd(-0.5);
+        verify(noteStep).setOccurrence(NoteOccurrence.FIRST);
+        verify(noteStep).setIsOccurrenceEnabled(true);
+        verify(noteStep).setRecurrence(4, 0b0001);
+        verify(noteStep).setIsRecurrenceEnabled(true);
+        verify(noteStep).setTranspose(7);
+        verify(noteStep).setPan(0.0);
+        verify(noteStep).setVelocitySpread(0.0);
+    }
+
+    @Test
+    void apply_track_static_pan_sets_pan_on_active_steps() {
+        state.setStepActive(0, 1, true);
+        state.setStaticPan(0, 0.25);
+
+        writer.applyTrackStaticPan(0);
+
+        verify(clips[0].getStep(0, 1, 60)).setPan(0.25);
+    }
+
+    @Test
+    void apply_track_velocity_spread_sets_spread_on_active_steps() {
+        state.setStepActive(0, 1, true);
+        state.setVelocitySpread(0, 0.4);
+
+        writer.applyTrackVelocitySpread(0);
+
+        verify(clips[0].getStep(0, 1, 60)).setVelocitySpread(0.4);
+    }
+
+    @Test
+    void writeStep_applies_scale_degree_offset_transpose_from_global_scale() {
+        StepState step = new StepState();
+        step.setScaleDegreeOffset(1);
+
+        writer.writeStep(0, 0, true, step);
+
+        NoteStep noteStep = clips[0].getStep(0, 0, 60);
+        verify(noteStep).setTranspose(2);
+    }
+
+    @Test
+    void writeStep_recomputes_transpose_when_global_scale_changes() {
+        StepState step = new StepState();
+        step.setScaleDegreeOffset(2);
+
+        writer.writeStep(0, 0, true, step);
+        NoteStep noteStep = clips[0].getStep(0, 0, 60);
+        verify(noteStep).setTranspose(4);
+
+        state.setGlobalScale(new GlobalScale(0, Mode.MINOR));
+        writer.writeStep(0, 0, true, step);
+        verify(noteStep).setTranspose(3);
+    }
+
+    @Test
+    void applyTrackTiming_sets_step_size_and_loop_length_and_rewrites_all_steps() {
+        state.setStepDuration(0, StepDuration.S8);
+        state.setLoopEndPoint(0, 5);
+        state.setStepActive(0, 1, true);
+
+        writer.applyTrackTiming(0);
+
+        verify(clips[0]).setStepSize(0.5);
+        verify(loopLengths[0]).set(2.5);
+        verify(playStarts[0]).set(0.0);
+        verify(shuffleValues[0]).set(false);
+        verify(clips[0], times(TrackState.STEP_COUNT))
+                .clearStepsAtX(eq(0), anyInt());
+        verify(clips[0], atLeastOnce())
+                .setStep(eq(0), eq(1), anyInt(), anyInt(), anyDouble());
+    }
+
+    @Test
+    void writeStep_applies_rotation_transpose_and_track_probability() {
+        state.setPatternRotation(0, 1);
+        state.setTranspose(0, 12);
+        state.setTrackProbability(0, 0.5);
+
+        StepState step = new StepState();
+        step.setPitch(60);
+        step.setProbability(0.8);
+
+        writer.writeStep(0, 2, true, step);
+
+        verify(clips[0]).setStep(eq(0), eq(3), eq(72), anyInt(), anyDouble());
+        NoteStep noteStep = clips[0].getStep(0, 3, 72);
+        verify(noteStep).setChance(0.4);
+    }
+
+    @Test
+    void applyTrackTiming_uses_loop_multiplier_phase_offset_and_shuffle_state() {
+        state.setStepDuration(0, StepDuration.S16);
+        state.setLoopEndPoint(0, 8);
+        state.setLoopMultiplier(0, LoopMultiplier.TWO);
+        state.setPhaseOffset(0, 0.25);
+        state.setSwing(0, 60);
+
+        writer.applyTrackTiming(0);
+
+        verify(loopLengths[0]).set(4.0);
+        verify(playStarts[0]).set(1.0);
+        verify(shuffleValues[0]).set(true);
+    }
+
+    @Test
+    void euclidean_redistribution_rewrites_only_active_flags_and_preserves_step_parameters() {
+        state.setLoopEndPoint(0, 8);
+        state.setStepPitch(0, 2, 74);
+        state.setStepVelocity(0, 2, 22);
+        state.setStepGateLength(0, 2, 0.4);
+
+        state.setStepPitch(0, 5, 67);
+        state.setStepVelocity(0, 5, 111);
+        state.setStepGateLength(0, 5, 0.8);
+
+        state.setEuclideanDistribution(0, 3);
+
+        writer.applyTrackTiming(0);
+
+        verify(clips[0], times(3)).setStep(anyInt(), anyInt(), anyInt(), anyInt(), anyDouble());
+        verify(clips[0]).setStep(eq(0), eq(0), eq(60), eq(100), anyDouble());
+        verify(clips[0]).setStep(eq(0), eq(3), eq(60), eq(100), anyDouble());
+        verify(clips[0]).setStep(eq(0), eq(5), eq(67), eq(111), anyDouble());
+
+        verify(clips[0], never()).setStep(eq(0), eq(2), anyInt(), anyInt(), anyDouble());
+    }
+
+    @Test
+    void active_step_with_major_triad_writes_three_pitches_at_same_step() {
+        StepState step = new StepState();
+        step.setChordVoicing(ChordVoicing.MAJ_TRIAD);
+
+        writer.writeStep(0, 1, true, step);
+
+        verify(clips[0]).setStep(eq(0), eq(1), eq(60), anyInt(), anyDouble());
+        verify(clips[0]).setStep(eq(0), eq(1), eq(64), anyInt(), anyDouble());
+        verify(clips[0]).setStep(eq(0), eq(1), eq(67), anyInt(), anyDouble());
+    }
+
+    @Test
+    void changing_voicing_from_major_triad_to_root_only_clears_extra_pitches() {
+        StepState step = new StepState();
+        step.setChordVoicing(ChordVoicing.MAJ_TRIAD);
+        writer.writeStep(0, 2, true, step);
+
+        clearInvocations(clips[0]);
+        step.setChordVoicing(ChordVoicing.ROOT_ONLY);
+        writer.writeStep(0, 2, true, step);
+
+        verify(clips[0]).clearStep(eq(0), eq(2), eq(64));
+        verify(clips[0]).clearStep(eq(0), eq(2), eq(67));
+        verify(clips[0], never()).clearStep(eq(0), eq(2), eq(60));
+        verify(clips[0]).setStep(eq(0), eq(2), eq(60), anyInt(), anyDouble());
+    }
+
+    @Test
+    void pitch_change_rewrites_chord_pitches_to_new_root() {
+        StepState step = new StepState();
+        step.setChordVoicing(ChordVoicing.MAJ_TRIAD);
+        writer.writeStep(0, 4, true, step);
+
+        clearInvocations(clips[0]);
+        step.setPitch(62);
+        writer.writeStep(0, 4, true, step);
+
+        verify(clips[0]).clearStep(eq(0), eq(4), eq(60));
+        verify(clips[0]).clearStep(eq(0), eq(4), eq(64));
+        verify(clips[0]).clearStep(eq(0), eq(4), eq(67));
+
+        int[] expected = ScaleEngine.chordPitches(state.getGlobalScale(), 62, ChordVoicing.MAJ_TRIAD);
+        assertArrayEquals(new int[]{62, 66, 69}, expected);
+        verify(clips[0]).setStep(eq(0), eq(4), eq(62), anyInt(), anyDouble());
+        verify(clips[0]).setStep(eq(0), eq(4), eq(66), anyInt(), anyDouble());
+        verify(clips[0]).setStep(eq(0), eq(4), eq(69), anyInt(), anyDouble());
     }
 }

@@ -33,8 +33,14 @@ public final class TrackState {
     private int transpose = 0;
     /** Per-track global fire probability (0.0–1.0). Default 1.0. */
     private double trackProbability = 1.0;
+    /** Static pan applied to all notes in this track (-1.0..1.0). Default center. */
+    private double staticPan = 0.0;
+    /** Velocity spread humanisation amount applied to all notes (0.0..1.0). */
+    private double velocitySpread = 0.0;
     /** Loop length multiplier. Default ONE (no multiplication). */
     private LoopMultiplier loopMultiplier = LoopMultiplier.ONE;
+    /** Euclidean distribution pulse count (0..loopEndPoint). Default 0. */
+    private int euclideanDistribution = 0;
     /** Phase offset as fraction of loop length (0.0–1.0). Default 0.0. */
     private double phaseOffset = 0.0;
 
@@ -66,7 +72,10 @@ public final class TrackState {
     public int getSwing()                       { return swing; }
     public int getTranspose()                   { return transpose; }
     public double getTrackProbability()         { return trackProbability; }
+    public double getStaticPan()                { return staticPan; }
+    public double getVelocitySpread()           { return velocitySpread; }
     public LoopMultiplier getLoopMultiplier()   { return loopMultiplier; }
+    public int getEuclideanDistribution()       { return euclideanDistribution; }
     public double getPhaseOffset()              { return phaseOffset; }
 
     /** Returns {@code true} if the given slot index has saved content. */
@@ -81,7 +90,10 @@ public final class TrackState {
     void setSwing(int swing)                            { this.swing = swing; }
     void setTranspose(int transpose)                    { this.transpose = transpose; }
     void setTrackProbability(double trackProbability)   { this.trackProbability = trackProbability; }
+    void setStaticPan(double staticPan)                 { this.staticPan = staticPan; }
+    void setVelocitySpread(double velocitySpread)       { this.velocitySpread = velocitySpread; }
     void setLoopMultiplier(LoopMultiplier loopMultiplier) { this.loopMultiplier = loopMultiplier; }
+    void setEuclideanDistribution(int euclideanDistribution) { this.euclideanDistribution = euclideanDistribution; }
     void setPhaseOffset(double phaseOffset)             { this.phaseOffset = phaseOffset; }
 
     /**
@@ -107,8 +119,10 @@ public final class TrackState {
      * </ol>
      */
     void switchSlot(int slotIndex) {
-        // Always persist the current live state to the current slot before moving away.
-        bank[activeSlot] = snapshotSteps();
+        // Persist current live state when it has meaningful content or when slot already exists.
+        if (bank[activeSlot] != null || hasAnyStepData()) {
+            bank[activeSlot] = snapshotSteps();
+        }
 
         if (bank[slotIndex] == null) {
             // Empty destination — copy current slot's content so the performer has a base
@@ -121,6 +135,16 @@ public final class TrackState {
         activeSlot = slotIndex;
     }
 
+    /** Clears a Sequence Slot. If active, live steps reset to defaults. */
+    void clearSlot(int slotIndex) {
+        bank[slotIndex] = null;
+        if (slotIndex == activeSlot) {
+            for (int i = 0; i < STEP_COUNT; i++) {
+                steps[i] = new StepState();
+            }
+        }
+    }
+
     // -------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------
@@ -131,6 +155,27 @@ public final class TrackState {
             snapshot[i] = steps[i].copy();
         }
         return snapshot;
+    }
+
+    private boolean hasAnyStepData() {
+        for (int i = 0; i < STEP_COUNT; i++) {
+            StepState step = steps[i];
+            if (step.isActive()) {
+                return true;
+            }
+            if (step.getPitch() != 60
+                    || step.getVelocity() != 100
+                    || Double.compare(step.getGateLength(), 0.5) != 0
+                    || Double.compare(step.getProbability(), 1.0) != 0
+                    || step.getChordVoicing() != ChordVoicing.ROOT_ONLY
+                    || step.getScaleDegreeOffset() != 0
+                    || step.getRatchetCount() != 1
+                    || Double.compare(step.getRatchetDecay(), 0.0) != 0
+                    || step.getStepCondition() != StepCondition.ALWAYS) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void restoreSteps(StepState[] snapshot) {

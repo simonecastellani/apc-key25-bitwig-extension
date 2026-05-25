@@ -2,11 +2,16 @@ package com.apcsequencer;
 
 import com.bitwig.extension.controller.ControllerExtension;
 import com.bitwig.extension.controller.api.ControllerHost;
+import com.bitwig.extension.controller.api.CursorDevice;
 import com.bitwig.extension.controller.api.CursorTrack;
+import com.bitwig.extension.controller.api.DocumentState;
 import com.bitwig.extension.controller.api.MidiIn;
 import com.bitwig.extension.controller.api.MidiOut;
 import com.bitwig.extension.controller.api.NoteInput;
+import com.bitwig.extension.controller.api.Parameter;
 import com.bitwig.extension.controller.api.PinnableCursorClip;
+import com.bitwig.extension.controller.api.SendBank;
+import com.bitwig.extension.controller.api.SettableEnumValue;
 import com.bitwig.extension.controller.api.Track;
 import com.bitwig.extension.controller.api.TrackBank;
 
@@ -24,6 +29,14 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
     // Scene Launch buttons 1–5: channel 0, notes 0x52–0x56
     private static final int SCENE_LAUNCH_MIN = 0x52;
     private static final int SCENE_LAUNCH_MAX = 0x56;
+
+    private static final String[] SCALE_ROOT_OPTIONS = {
+            "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
+    };
+    private static final String[] SCALE_MODE_OPTIONS = {
+            "Major", "Minor", "Dorian", "Phrygian", "Lydian",
+            "Mixolydian", "Locrian", "Pentatonic Major", "Pentatonic Minor", "Chromatic"
+    };
 
     // Keep CursorTrack references alive to prevent garbage collection.
     @SuppressWarnings("FieldCanBeLocal")
@@ -65,6 +78,9 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
         // tracks — so clips are never accidentally created on those.
         // ----------------------------------------------------------------
         PinnableCursorClip[] clips = new PinnableCursorClip[SequencerState.TRACK_COUNT];
+        Track[] tracks = new Track[SequencerState.TRACK_COUNT];
+        Parameter[][] trackDeviceMacros = new Parameter[SequencerState.TRACK_COUNT][TrackState.STEP_COUNT];
+        Parameter[][] trackSendLevels = new Parameter[SequencerState.TRACK_COUNT][TrackState.STEP_COUNT];
         cursors = new CursorTrack[SequencerState.TRACK_COUNT];
         mainTrackBank = host.createMainTrackBank(SequencerState.TRACK_COUNT, 0, 1);
         boolean[] clipCreateRequested = new boolean[SequencerState.TRACK_COUNT];
@@ -74,7 +90,24 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
         for (int t = 0; t < SequencerState.TRACK_COUNT; t++) {
             final int trackIndex = t;
             final Track bankTrack = mainTrackBank.getItemAt(trackIndex);
+            tracks[trackIndex] = bankTrack;
             bankTrack.exists().markInterested();
+
+            CursorDevice cursorDevice = bankTrack.createCursorDevice("seq-primary-device-" + trackIndex);
+            cursorDevice.exists().markInterested();
+            var remoteControls = cursorDevice.createCursorRemoteControlsPage(TrackState.STEP_COUNT);
+
+            SendBank sendBank = bankTrack.sendBank();
+
+            for (int i = 0; i < TrackState.STEP_COUNT; i++) {
+                Parameter macro = remoteControls.getParameter(i);
+                macro.markInterested();
+                trackDeviceMacros[trackIndex][i] = macro;
+
+                Parameter send = sendBank.getItemAt(i);
+                send.markInterested();
+                trackSendLevels[trackIndex][i] = send;
+            }
 
             CursorTrack cursor = host.createCursorTrack(
                     "seq-track-" + t, "Sequencer Track " + t, 0, 1, false);
@@ -94,6 +127,7 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
                 if (exists) {
                     double beatTime = state.getTrack(trackIndex).getStepDuration().beatTime();
                     clip.setStepSize(beatTime);
+                    clip.getLoopLength().set(state.getTrack(trackIndex).getLoopEndPoint() * beatTime);
                 }
             });
 
@@ -169,7 +203,7 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
         // ----------------------------------------------------------------
         // Wire up the domain model and dispatcher.
         // ----------------------------------------------------------------
-        BitwigClipWriter clipWriter = new BitwigClipWriter(clips, state);
+        BitwigClipWriter clipWriter = new BitwigClipWriter(clips, tracks, trackDeviceMacros, trackSendLevels, state);
         GestureDispatcher dispatcher = new GestureDispatcher(state, clipWriter, ledOut, host);
 
         for (int t = 0; t < SequencerState.TRACK_COUNT; t++) {
@@ -178,7 +212,23 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
         }
 
         InputModifierTracker tracker = new InputModifierTracker();
-        new MidiRouter(allIn, tracker, dispatcher);
+        new MidiRouter(allIn, tracker, dispatcher, host.createTransport());
+
+        DocumentState documentState = host.getDocumentState();
+        SettableEnumValue scaleRootSetting = documentState.getEnumSetting(
+                "Global Scale Root", "Sequencer", SCALE_ROOT_OPTIONS, SCALE_ROOT_OPTIONS[0]);
+        SettableEnumValue scaleModeSetting = documentState.getEnumSetting(
+                "Global Scale Mode", "Sequencer", SCALE_MODE_OPTIONS, SCALE_MODE_OPTIONS[0]);
+
+        Runnable syncGlobalScale = () -> {
+            int root = rootFromName(scaleRootSetting.get());
+            Mode mode = modeFromName(scaleModeSetting.get());
+            dispatcher.updateGlobalScale(new GlobalScale(root, mode));
+        };
+
+        scaleRootSetting.addValueObserver(value -> syncGlobalScale.run());
+        scaleModeSetting.addValueObserver(value -> syncGlobalScale.run());
+        syncGlobalScale.run();
 
         dispatcher.flushLeds();
 
@@ -210,5 +260,30 @@ public class ApcKey25SequencerExtension extends ControllerExtension {
         for (int note = 0x40; note <= 0x62; note++) {
             ledOut.sendMidi(0x90, note, 0);
         }
+    }
+
+    private static int rootFromName(String name) {
+        for (int i = 0; i < SCALE_ROOT_OPTIONS.length; i++) {
+            if (SCALE_ROOT_OPTIONS[i].equals(name)) {
+                return i;
+            }
+        }
+        return 0;
+    }
+
+    private static Mode modeFromName(String name) {
+        return switch (name) {
+            case "Major" -> Mode.MAJOR;
+            case "Minor" -> Mode.MINOR;
+            case "Dorian" -> Mode.DORIAN;
+            case "Phrygian" -> Mode.PHRYGIAN;
+            case "Lydian" -> Mode.LYDIAN;
+            case "Mixolydian" -> Mode.MIXOLYDIAN;
+            case "Locrian" -> Mode.LOCRIAN;
+            case "Pentatonic Major" -> Mode.PENTATONIC_MAJOR;
+            case "Pentatonic Minor" -> Mode.PENTATONIC_MINOR;
+            case "Chromatic" -> Mode.CHROMATIC;
+            default -> Mode.MAJOR;
+        };
     }
 }

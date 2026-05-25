@@ -91,6 +91,79 @@ public final class LedRenderer {
         return leds;
     }
 
+    /**
+     * Compute the LED grid for Scale Selection overlay.
+     *
+     * <p>Layout:</p>
+     * <ul>
+     *   <li>Track 0, steps 0-7: roots C..G</li>
+     *   <li>Track 1, steps 0-7: MAJOR..PENTATONIC_MAJOR</li>
+     *   <li>Track 2, step 0: PENTATONIC_MINOR; step 1: CHROMATIC</li>
+     * </ul>
+     */
+    public static int[][] renderScaleSelection(SequencerState state) {
+        int[][] leds = new int[SequencerState.TRACK_COUNT][TrackState.STEP_COUNT];
+        GlobalScale scale = state.getGlobalScale();
+
+        for (int track = 0; track < SequencerState.TRACK_COUNT; track++) {
+            for (int step = 0; step < TrackState.STEP_COUNT; step++) {
+                leds[track][step] = OFF;
+            }
+        }
+
+        for (int root = 0; root <= 7; root++) {
+            leds[0][root] = (scale.root() == root) ? YELLOW : GREEN;
+        }
+
+        for (int i = 0; i <= 7; i++) {
+            Mode mode = switch (i) {
+                case 0 -> Mode.MAJOR;
+                case 1 -> Mode.MINOR;
+                case 2 -> Mode.DORIAN;
+                case 3 -> Mode.PHRYGIAN;
+                case 4 -> Mode.LYDIAN;
+                case 5 -> Mode.MIXOLYDIAN;
+                case 6 -> Mode.LOCRIAN;
+                case 7 -> Mode.PENTATONIC_MAJOR;
+                default -> throw new IllegalStateException();
+            };
+            leds[1][i] = (scale.mode() == mode) ? YELLOW : GREEN;
+        }
+
+        leds[2][0] = (scale.mode() == Mode.PENTATONIC_MINOR) ? YELLOW : GREEN;
+        leds[2][1] = (scale.mode() == Mode.CHROMATIC) ? YELLOW : GREEN;
+
+        return leds;
+    }
+
+    /**
+     * Compute the LED grid for Sequence Bank overlay.
+     *
+     * <p>Per slot colour:</p>
+     * <ul>
+     *   <li>off: empty slot</li>
+     *   <li>green: populated slot</li>
+     *   <li>yellow: currently active slot</li>
+     * </ul>
+     */
+    public static int[][] renderSequenceBank(SequencerState state) {
+        int[][] leds = new int[SequencerState.TRACK_COUNT][TrackState.STEP_COUNT];
+        for (int track = 0; track < SequencerState.TRACK_COUNT; track++) {
+            TrackState trackState = state.getTrack(track);
+            int activeSlot = trackState.getActiveSlot();
+            for (int slot = 0; slot < TrackState.SLOT_COUNT; slot++) {
+                if (slot == activeSlot) {
+                    leds[track][slot] = YELLOW;
+                } else if (trackState.isSlotPopulated(slot)) {
+                    leds[track][slot] = GREEN;
+                } else {
+                    leds[track][slot] = OFF;
+                }
+            }
+        }
+        return leds;
+    }
+
     private static int normalizePlayhead(int rawPlayhead, int loopEnd) {
         if (rawPlayhead < 0) {
             return -1;

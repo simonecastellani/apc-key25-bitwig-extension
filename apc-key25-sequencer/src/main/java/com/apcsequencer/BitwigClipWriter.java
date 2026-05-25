@@ -1,8 +1,16 @@
 package com.apcsequencer;
 
+import com.bitwig.extension.controller.api.NoteOccurrence;
+import com.bitwig.extension.controller.api.NoteStep;
+import com.bitwig.extension.controller.api.Parameter;
 import com.bitwig.extension.controller.api.PinnableCursorClip;
+import com.bitwig.extension.controller.api.SettableBooleanValue;
+import com.bitwig.extension.controller.api.CursorRemoteControlsPage;
+import com.bitwig.extension.controller.api.Track;
+import com.bitwig.extension.controller.api.ClipLauncherSlotBank;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.Deque;
 import java.util.List;
 
@@ -24,10 +32,21 @@ import java.util.List;
 public final class BitwigClipWriter implements ClipWriter {
 
     private final PinnableCursorClip[] clips;
+    private final ClipLauncherSlotBank[] slotBanks;
+    private final SettableBooleanValue[] muteValues;
+    private final Parameter[] trackVolumes;
+    private final Parameter[][] trackDeviceMacros;
+    private final Parameter[][] trackSendLevels;
     private final SequencerState       state;
 
     private final boolean[]            ready;
+    private final boolean[]            pendingTrackTiming;
     private final List<Deque<PendingWrite>> pending;
+    private final boolean[] trackPlaying;
+    private final boolean[] trackMuted;
+    private final boolean[][] slotPlaying;
+    private final BitSet[][] writtenPitches;
+    private PlaybackStateListener playbackStateListener;
 
     private static final class PendingWrite {
         final int       step;
@@ -45,21 +64,93 @@ public final class BitwigClipWriter implements ClipWriter {
      * @param clips one non-null {@link PinnableCursorClip} per track (length == TRACK_COUNT)
      * @param state used to look up per-track {@link StepDuration} for gate-length computation
      */
-    public BitwigClipWriter(PinnableCursorClip[] clips, SequencerState state) {
+    public BitwigClipWriter(PinnableCursorClip[] clips,
+                            Track[] tracks,
+                            Parameter[][] trackDeviceMacros,
+                            Parameter[][] trackSendLevels,
+                            SequencerState state) {
         if (clips.length != SequencerState.TRACK_COUNT) {
             throw new IllegalArgumentException(
                     "clips array must have " + SequencerState.TRACK_COUNT + " entries");
         }
+        if (tracks.length != SequencerState.TRACK_COUNT) {
+            throw new IllegalArgumentException(
+                    "tracks array must have " + SequencerState.TRACK_COUNT + " entries");
+        }
+        if (trackDeviceMacros.length != SequencerState.TRACK_COUNT) {
+            throw new IllegalArgumentException(
+                    "trackDeviceMacros array must have " + SequencerState.TRACK_COUNT + " entries");
+        }
+        if (trackSendLevels.length != SequencerState.TRACK_COUNT) {
+            throw new IllegalArgumentException(
+                    "trackSendLevels array must have " + SequencerState.TRACK_COUNT + " entries");
+        }
         this.clips   = clips;
+        this.slotBanks = new ClipLauncherSlotBank[SequencerState.TRACK_COUNT];
+        this.muteValues = new SettableBooleanValue[SequencerState.TRACK_COUNT];
+        this.trackVolumes = new Parameter[SequencerState.TRACK_COUNT];
+        this.trackDeviceMacros = trackDeviceMacros;
+        this.trackSendLevels = trackSendLevels;
         this.state   = state;
         this.ready   = new boolean[SequencerState.TRACK_COUNT];
+        this.pendingTrackTiming = new boolean[SequencerState.TRACK_COUNT];
         this.pending = new ArrayList<>(SequencerState.TRACK_COUNT);
+        this.trackPlaying = new boolean[SequencerState.TRACK_COUNT];
+        this.trackMuted = new boolean[SequencerState.TRACK_COUNT];
+        this.slotPlaying = new boolean[SequencerState.TRACK_COUNT][TrackState.SLOT_COUNT];
+        this.writtenPitches = new BitSet[SequencerState.TRACK_COUNT][TrackState.STEP_COUNT];
 
         for (int t = 0; t < SequencerState.TRACK_COUNT; t++) {
             ready[t] = false;
             pending.add(new ArrayDeque<>());
+            trackPlaying[t] = false;
+            pendingTrackTiming[t] = false;
+            for (int s = 0; s < TrackState.STEP_COUNT; s++) {
+                writtenPitches[t][s] = new BitSet(128);
+            }
 
             final int trackIndex = t;
+            Track track = tracks[t];
+
+            ClipLauncherSlotBank slotBank = track.clipLauncherSlotBank();
+            slotBanks[t] = slotBank;
+            slotBank.addPlaybackStateObserver((slot, playbackState, queued) -> {
+                if (queued || slot < 0 || slot >= TrackState.SLOT_COUNT) {
+                    return;
+                }
+                slotPlaying[trackIndex][slot] = playbackState != 0;
+                boolean anyPlaying = false;
+                for (int i = 0; i < TrackState.SLOT_COUNT; i++) {
+                    if (slotPlaying[trackIndex][i]) {
+                        anyPlaying = true;
+                        break;
+                    }
+                }
+                if (trackPlaying[trackIndex] != anyPlaying) {
+                    trackPlaying[trackIndex] = anyPlaying;
+                    if (playbackStateListener != null) {
+                        playbackStateListener.onTrackPlayingChanged(trackIndex, anyPlaying);
+                    }
+                }
+            });
+
+            SettableBooleanValue mute = track.mute();
+            mute.markInterested();
+            mute.addValueObserver(muted -> {
+                if (trackMuted[trackIndex] != muted) {
+                    trackMuted[trackIndex] = muted;
+                    if (playbackStateListener != null) {
+                        playbackStateListener.onTrackMutedChanged(trackIndex, muted);
+                    }
+                }
+            });
+            muteValues[t] = mute;
+            trackMuted[t] = mute.get();
+
+            Parameter volume = track.volume();
+            volume.markInterested();
+            trackVolumes[t] = volume;
+
             PinnableCursorClip clip = clips[t];
 
             clip.exists().markInterested();
@@ -93,23 +184,349 @@ public final class BitwigClipWriter implements ClipWriter {
         applyWrite(track, clip, step, active, stepState);
     }
 
-    private void applyWrite(int track, PinnableCursorClip clip,
-                            int step, boolean active, StepState stepState) {
-        if (active) {
-            double stepBeatTime = state.getTrack(track).getStepDuration().beatTime();
-            double gateDuration = stepState.getGateLength() * stepBeatTime;
-            clip.setStep(0, step, stepState.getPitch(), stepState.getVelocity(), gateDuration);
+    @Override
+    public void writeStepParameters(int track,
+                                    int step,
+                                    int pitch,
+                                    double velocity,
+                                    double duration,
+                                    double chance,
+                                    int repeatCount,
+                                    double repeatVelocityEnd,
+                                    NoteOccurrence occurrence,
+                                    int recurrenceLength,
+                                    int recurrenceMask,
+                                    int transposeSemitones) {
+        PinnableCursorClip clip = clips[track];
+        NoteStep noteStep = clip.getStep(0, step, pitch);
+        noteStep.setVelocity(velocity);
+        noteStep.setDuration(duration);
+        noteStep.setChance(chance);
+        noteStep.setIsChanceEnabled(true);
+        noteStep.setRepeatCount(repeatCount);
+        noteStep.setRepeatVelocityEnd(repeatVelocityEnd);
+        noteStep.setRepeatVelocityCurve(repeatVelocityEnd == 0.0 ? 0.0 : -1.0);
+        noteStep.setOccurrence(occurrence);
+        noteStep.setIsOccurrenceEnabled(occurrence != NoteOccurrence.ALWAYS);
+        if (recurrenceLength > 1) {
+            noteStep.setRecurrence(recurrenceLength, recurrenceMask);
+            noteStep.setIsRecurrenceEnabled(true);
         } else {
-            clip.clearStep(0, step, stepState.getPitch());
+            noteStep.setIsRecurrenceEnabled(false);
+        }
+        noteStep.setIsRepeatEnabled(repeatCount > 1 || repeatVelocityEnd != 0.0);
+        noteStep.setTranspose(transposeSemitones);
+        TrackState trackState = state.getTrack(track);
+        noteStep.setPan(trackState.getStaticPan());
+        noteStep.setVelocitySpread(trackState.getVelocitySpread());
+    }
+
+    @Override
+    public void applyTrackTiming(int track) {
+        PinnableCursorClip clip = clips[track];
+
+        if (!ready[track] && clip.exists().get()) {
+            setTrackReadyAndDrain(track, clip);
+        }
+
+        if (!ready[track]) {
+            pendingTrackTiming[track] = true;
+            return;
+        }
+
+        applyTrackTimingNow(track, clip);
+    }
+
+    @Override
+    public void adjustTrackClipVolume(int track, int delta) {
+        if (delta == 0) {
+            return;
+        }
+        trackVolumes[track].inc(delta * 0.01);
+    }
+
+    @Override
+    public void toggleTrackMute(int track) {
+        muteValues[track].set(!trackMuted[track]);
+    }
+
+    @Override
+    public void applyTrackStaticPan(int track) {
+        applyPerTrackNoteStepModulation(track, true);
+    }
+
+    @Override
+    public void applyTrackVelocitySpread(int track) {
+        applyPerTrackNoteStepModulation(track, false);
+    }
+
+    @Override
+    public void adjustFocusedTrackDeviceMacro(int track, int macro, int delta) {
+        if (delta == 0) {
+            return;
+        }
+        if (track < 0 || track >= trackDeviceMacros.length) {
+            return;
+        }
+        Parameter[] macros = trackDeviceMacros[track];
+        if (macros == null || macro < 0 || macro >= macros.length || macros[macro] == null) {
+            return;
+        }
+        macros[macro].inc(delta * 0.01);
+    }
+
+    @Override
+    public void adjustFocusedTrackSendLevel(int track, int send, int delta) {
+        if (delta == 0) {
+            return;
+        }
+        if (track < 0 || track >= trackSendLevels.length) {
+            return;
+        }
+        Parameter[] sends = trackSendLevels[track];
+        if (sends == null || send < 0 || send >= sends.length || sends[send] == null) {
+            return;
+        }
+        sends[send].inc(delta * 0.01);
+    }
+
+    @Override
+    public void toggleTrackClipPlayback(int track, int slot) {
+        ClipLauncherSlotBank slotBank = slotBanks[track];
+        if (trackPlaying[track]) {
+            slotBank.stop();
+        } else {
+            slotBank.launch(slot);
         }
     }
 
+    @Override
+    public void copySlotIfEmpty(int track, int sourceSlot, int destinationSlot) {
+        if (sourceSlot == destinationSlot) {
+            return;
+        }
+        if (!isSlotPopulated(track, destinationSlot)) {
+            slotBanks[track].getItemAt(sourceSlot).duplicateClip();
+        }
+    }
+
+    @Override
+    public void launchSlot(int track, int slot) {
+        slotBanks[track].launch(slot);
+    }
+
+    @Override
+    public void clearSlot(int track, int slot) {
+        slotBanks[track].getItemAt(slot).deleteObject();
+        slotPlaying[track][slot] = false;
+        boolean anyPlaying = false;
+        for (int i = 0; i < TrackState.SLOT_COUNT; i++) {
+            if (slotPlaying[track][i]) {
+                anyPlaying = true;
+                break;
+            }
+        }
+        if (trackPlaying[track] != anyPlaying) {
+            trackPlaying[track] = anyPlaying;
+            if (playbackStateListener != null) {
+                playbackStateListener.onTrackPlayingChanged(track, anyPlaying);
+            }
+        }
+    }
+
+    @Override
+    public boolean isSlotPopulated(int track, int slot) {
+        return slotBanks[track].getItemAt(slot).hasContent().get();
+    }
+
+    @Override
+    public void stopAllTrackClips() {
+        for (int t = 0; t < SequencerState.TRACK_COUNT; t++) {
+            slotBanks[t].stop();
+        }
+    }
+
+    @Override
+    public boolean isTrackPlaying(int track) {
+        return trackPlaying[track];
+    }
+
+    @Override
+    public boolean isTrackMuted(int track) {
+        return trackMuted[track];
+    }
+
+    @Override
+    public void setPlaybackStateListener(PlaybackStateListener listener) {
+        playbackStateListener = listener;
+        if (listener == null) {
+            return;
+        }
+        for (int t = 0; t < SequencerState.TRACK_COUNT; t++) {
+            listener.onTrackPlayingChanged(t, trackPlaying[t]);
+            listener.onTrackMutedChanged(t, trackMuted[t]);
+        }
+    }
+
+    private void applyWrite(int track, PinnableCursorClip clip,
+                            int step, boolean active, StepState stepState) {
+        TrackState trackState = state.getTrack(track);
+        int resolvedStep = resolveStepPosition(step, trackState);
+        int effectivePitch = effectivePitch(stepState.getPitch(), trackState.getTranspose());
+        double stepBeatTime = trackState.getStepDuration().beatTime();
+        double gateDuration = stepState.getGateLength() * stepBeatTime;
+        int transposeSemitones = ScaleEngine.semitoneOffset(state.getGlobalScale(), stepState.getScaleDegreeOffset());
+        BitSet previous = writtenPitches[track][resolvedStep];
+
+        if (active) {
+            int[] targetPitches = ScaleEngine.chordPitches(
+                    state.getGlobalScale(),
+                    effectivePitch,
+                    stepState.getChordVoicing());
+
+            BitSet target = new BitSet(128);
+            for (int pitch : targetPitches) {
+                target.set((int) clamp(pitch, 0, 127));
+            }
+
+            for (int pitch = previous.nextSetBit(0); pitch >= 0; pitch = previous.nextSetBit(pitch + 1)) {
+                if (!target.get(pitch)) {
+                    clip.clearStep(0, resolvedStep, pitch);
+                }
+            }
+
+            for (int pitch : targetPitches) {
+                int clampedPitch = (int) clamp(pitch, 0, 127);
+                clip.setStep(0, resolvedStep, clampedPitch, stepState.getVelocity(), gateDuration);
+                writeStepParameters(
+                        track,
+                        resolvedStep,
+                        clampedPitch,
+                        stepState.getVelocity() / 127.0,
+                        gateDuration,
+                        clamp(stepState.getProbability() * trackState.getTrackProbability(), 0.0, 1.0),
+                        stepState.getRatchetCount(),
+                        -stepState.getRatchetDecay(),
+                        NoteOccurrence.ALWAYS,
+                        recurrenceLength(stepState.getStepCondition()),
+                        recurrenceMask(stepState.getStepCondition()),
+                        transposeSemitones);
+            }
+
+            previous.clear();
+            previous.or(target);
+        } else {
+            if (previous.isEmpty()) {
+                clip.clearStep(0, resolvedStep, effectivePitch);
+            } else {
+                for (int pitch = previous.nextSetBit(0); pitch >= 0; pitch = previous.nextSetBit(pitch + 1)) {
+                    clip.clearStep(0, resolvedStep, pitch);
+                }
+            }
+            previous.clear();
+        }
+    }
+
+    private static int recurrenceLength(StepCondition condition) {
+        return switch (condition) {
+            case ALWAYS -> 1;
+            case EVERY_2ND -> 2;
+            case EVERY_4TH -> 4;
+            case EVERY_8TH -> 8;
+        };
+    }
+
+    private void applyPerTrackNoteStepModulation(int track, boolean pan) {
+        PinnableCursorClip clip = clips[track];
+        TrackState trackState = state.getTrack(track);
+
+        for (int step = 0; step < TrackState.STEP_COUNT; step++) {
+            StepState stepState = trackState.getStep(step);
+            if (!stepState.isActive()) {
+                continue;
+            }
+
+            int resolvedStep = resolveStepPosition(step, trackState);
+            int effectivePitch = effectivePitch(stepState.getPitch(), trackState.getTranspose());
+            int[] targetPitches = ScaleEngine.chordPitches(
+                    state.getGlobalScale(),
+                    effectivePitch,
+                    stepState.getChordVoicing());
+
+            for (int pitch : targetPitches) {
+                int clampedPitch = (int) clamp(pitch, 0, 127);
+                NoteStep noteStep = clip.getStep(0, resolvedStep, clampedPitch);
+                if (pan) {
+                    noteStep.setPan(trackState.getStaticPan());
+                } else {
+                    noteStep.setVelocitySpread(trackState.getVelocitySpread());
+                }
+            }
+        }
+    }
+
+    private static int recurrenceMask(StepCondition condition) {
+        return switch (condition) {
+            case ALWAYS -> 1;
+            case EVERY_2ND -> 0b01;
+            case EVERY_4TH -> 0b0001;
+            case EVERY_8TH -> 0b00000001;
+        };
+    }
+
     private void setTrackReadyAndDrain(int trackIndex, PinnableCursorClip clip) {
+        ready[trackIndex] = true;
+
         Deque<PendingWrite> dq = pending.get(trackIndex);
         while (!dq.isEmpty()) {
             PendingWrite w = dq.poll();
             applyWrite(trackIndex, clip, w.step, w.active, w.snapshot);
         }
-        ready[trackIndex] = true;
+
+        if (pendingTrackTiming[trackIndex]) {
+            pendingTrackTiming[trackIndex] = false;
+            applyTrackTimingNow(trackIndex, clip);
+        }
+    }
+
+    private void applyTrackTimingNow(int track, PinnableCursorClip clip) {
+        TrackState trackState = state.getTrack(track);
+        double stepBeatTime = trackState.getStepDuration().beatTime();
+        double baseLoopLength = trackState.getLoopEndPoint() * stepBeatTime;
+        double loopLength = baseLoopLength * trackState.getLoopMultiplier().factor();
+        double playStart = loopLength * trackState.getPhaseOffset();
+
+        clip.setStepSize(stepBeatTime);
+        clip.getLoopLength().set(loopLength);
+        clip.getPlayStart().set(playStart);
+        clip.getShuffle().set(trackState.getSwing() > 50);
+
+        for (int step = 0; step < TrackState.STEP_COUNT; step++) {
+            clip.clearStepsAtX(0, step);
+            writtenPitches[track][step].clear();
+        }
+
+        for (int step = 0; step < TrackState.STEP_COUNT; step++) {
+            StepState stepState = trackState.getStep(step);
+            if (stepState.isActive()) {
+                applyWrite(track, clip, step, true, stepState);
+            }
+        }
+    }
+
+    private static int resolveStepPosition(int step, TrackState trackState) {
+        int loopEndPoint = trackState.getLoopEndPoint();
+        if (step < 0 || step >= loopEndPoint) {
+            return step;
+        }
+        return Math.floorMod(step + trackState.getPatternRotation(), loopEndPoint);
+    }
+
+    private static int effectivePitch(int pitch, int transpose) {
+        return (int) clamp(pitch + transpose, 0, 127);
+    }
+
+    private static double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
     }
 }
